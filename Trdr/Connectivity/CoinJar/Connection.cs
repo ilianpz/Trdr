@@ -99,7 +99,7 @@ public sealed class Connection
 
     public async IAsyncEnumerable<TickerPayload> SubscribeTicker(string pair)
     {
-        await foreach (MessagePair messagePair in SubscribeTradesRaw(pair))
+        await foreach (MessagePair messagePair in SubscribeTradesRaw(pair).ConfigureAwait(false))
         {
             yield return ((MessageWithPayload<TickerPayload>)messagePair.Message).Payload;
         }
