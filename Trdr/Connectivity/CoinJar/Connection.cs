@@ -97,12 +97,10 @@ public sealed class Connection
         }
     }
 
-    public async IAsyncEnumerable<TickerPayload> SubscribeTicker(string pair)
+    public IAsyncEnumerable<TickerPayload> SubscribeTicker(string symbol)
     {
-        await foreach (MessagePair messagePair in SubscribeTradesRaw(pair).ConfigureAwait(false))
-        {
-            yield return ((MessageWithPayload<TickerPayload>)messagePair.Message).Payload;
-        }
+        return SubscribeTickerRaw(symbol)
+            .Select(messagePair => ((MessageWithPayload<TickerPayload>)messagePair.Message).Payload);
     }
 
     public IAsyncEnumerable<MessagePair> SubscribeTickerRaw(string pair)
