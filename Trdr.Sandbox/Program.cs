@@ -3,7 +3,6 @@ using Trdr;
 using Trdr.App;
 using Trdr.Connectivity.CoinJar;
 
-
 var loggerFactory = Application.SetupDefaultLogger();
 var logger = loggerFactory.CreateLogger("Main");
 
@@ -11,7 +10,7 @@ logger.LogInformation("Started...");
 var connection = Connection.Create();
 await connection.Connect();
 
-const string pair = "XRPUSDT";
+const string symbol = "XRPUSDT";
 SubscribeTicker().Forget();
 SubscribeTrades().Forget();
 
@@ -21,9 +20,10 @@ async Task SubscribeTicker()
 {
     logger.LogInformation("SubscribeTicker");
 
-    await foreach (var msg in connection.SubscribeTicker(pair))
+    await foreach (var messagePair in connection.SubscribeTickerRaw(symbol))
     {
-        logger.LogInformation("{msg}", msg);
+        Console.WriteLine(messagePair.RawMessage);
+        logger.LogInformation("{RawMessage}", messagePair.RawMessage);
     }
 }
 
@@ -31,8 +31,9 @@ async Task SubscribeTrades()
 {
     logger.LogInformation("SubscribeTrades");
 
-    await foreach (var msg in connection.SubscribeTrades(pair))
+    await foreach (var messagePair in connection.SubscribeTradesRaw(symbol))
     {
-        logger.LogInformation("{msg}", msg);
+        Console.WriteLine(messagePair.RawMessage);
+        logger.LogInformation("{RawMessage}", messagePair.RawMessage);
     }
 }

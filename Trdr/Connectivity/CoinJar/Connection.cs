@@ -1,181 +1,204 @@
-﻿using System.Collections.Concurrent;
-using System.Net.WebSockets;
+﻿using System.Net.WebSockets;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Nito.AsyncEx;
+using Trdr.Connectivity.CoinJar.Phoenix;
 
-namespace Trdr.Connectivity.CoinJar
+namespace Trdr.Connectivity.CoinJar;
+
+/// <summary>
+/// Represents a WebSocket connection to CoinJar
+/// </summary>
+/// <remarks>
+/// The CoinJar WebSocket API uses Phoenix channels (https://hexdocs.pm/phoenix/channels.html).
+/// </remarks>
+public sealed class Connection
 {
-    public class Connection
+    private static readonly JsonSerializerOptions _serializerOptions = new();
+    
+    private readonly ILogger<Connection>? _logger;
+
+    private readonly ClientWebSocket _webSocket = new();
+    private readonly string _connectionStr;
+    private readonly ArraySegment<byte> _buffer = new(new byte[2048]);
+    private readonly Dictionary<string, AsyncProducerConsumerQueue<MessagePair>> _topicToReceiver = new();
+
+    private long _ref;
+
+    static Connection()
     {
-        private readonly ILogger<Connection>? _logger;
+        _serializerOptions.Converters.Add(new MessageConverter());
+    }
 
-        private readonly ClientWebSocket _webSocket = new();
-        private readonly string _connectionStr;
-        private readonly ArraySegment<byte> _buffer = new(new byte[2048]);
-        private readonly Dictionary<string, AsyncProducerConsumerQueue<string>> _topicToReceiver = new();
+    private Connection(string connectionStr)
+    {
+        _logger = Module.CreateLogger<Connection>();
+        _connectionStr = connectionStr;
+    }
 
-        private long _ref;
+    public static Connection Create()
+    {
+        return new Connection("wss://feed.exchange.coinjar.com/socket/websocket");
+    }
 
-        private Connection(string connectionStr)
+    public static Connection CreateSandbox()
+    {
+        return new Connection("wss://feed.exchange.coinjar-sandbox.com/socket/websocket");
+    }
+
+    public async Task Connect()
+    {
+        _logger?.LogInformation("Connecting...");
+      
+        await _webSocket.ConnectAsync(new Uri(_connectionStr), CancellationToken.None).ConfigureAwait(false);
+
+        Listen().Forget();
+        DoHeartbeat().Forget();
+
+        _logger?.LogInformation("Connected");
+    }
+
+    public Task Disconnect()
+    {
+        return _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Normal disconnect", CancellationToken.None);
+    }
+
+    public IAsyncEnumerable<MessagePair> Subscribe(string channel)
+    {
+        return Subscribe(channel, CancellationToken.None);
+    }
+
+    public async IAsyncEnumerable<MessagePair> Subscribe(
+        string channel,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var request = CreateJoinRequest(channel);
+
+        var receiver = new AsyncProducerConsumerQueue<MessagePair>();
+        lock (_topicToReceiver)
         {
-            _logger = Module.CreateLogger<Connection>();
-            _connectionStr = connectionStr;
+            _topicToReceiver[channel] = receiver;
         }
 
-        public static Connection Create()
+        await _webSocket.SendString(request).ConfigureAwait(false);
+
+        while (true)
         {
-            return new Connection("wss://feed.exchange.coinjar.com/socket/websocket");
-        }
-
-        public static Connection CreateSandbox()
-        {
-            return new Connection("wss://feed.exchange.coinjar-sandbox.com/socket/websocket");
-        }
-
-        public async Task Connect()
-        {
-            _logger?.LogInformation("Connecting...");
-          
-            await _webSocket.ConnectAsync(new Uri(_connectionStr), CancellationToken.None).ConfigureAwait(false);
-
-            Listen().Forget();
-            DoHeartbeat().Forget();
-
-            _logger?.LogInformation("Connected");
-        }
-
-        public Task Disconnect()
-        {
-            return _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Normal disconnect", CancellationToken.None);
-        }
-
-        public IAsyncEnumerable<string> Subscribe(string channel)
-        {
-            return Subscribe(channel, CancellationToken.None);
-        }
-
-        public async IAsyncEnumerable<string> Subscribe(
-            string channel,
-            [EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            var request = CreateJoinRequest(channel);
-
-            var receiver = new AsyncProducerConsumerQueue<string>();
-            lock (_topicToReceiver)
+            var messagePair = await receiver.DequeueAsync(cancellationToken);
+            if (messagePair.Message is MessageWithPayload<ReplyPayload> replyMessage)
             {
-                _topicToReceiver[channel] = receiver;
+                if (replyMessage.Payload.Status != "ok")
+                    throw new InvalidOperationException("Received error response");
             }
 
-            await _webSocket.SendString(request).ConfigureAwait(false);
-
-            while (true)
-            {
-                yield return await receiver.DequeueAsync(cancellationToken);
-            }
+            yield return messagePair;
         }
+    }
 
-        public IAsyncEnumerable<string> SubscribeTicker(string pair)
+    public async IAsyncEnumerable<TickerPayload> SubscribeTicker(string pair)
+    {
+        await foreach (MessagePair messagePair in SubscribeTradesRaw(pair))
         {
-            if (pair == null) throw new ArgumentNullException(nameof(pair));
-
-            string topic = $"ticker:{pair}";
-            return Subscribe(topic);
+            yield return ((MessageWithPayload<TickerPayload>)messagePair.Message).Payload;
         }
+    }
 
-        public IAsyncEnumerable<string> SubscribeTrades(string pair)
-        {
-            if (pair == null) throw new ArgumentNullException(nameof(pair));
+    public IAsyncEnumerable<MessagePair> SubscribeTickerRaw(string pair)
+    {
+        if (pair == null) throw new ArgumentNullException(nameof(pair));
 
-            string topic = $"trades:{pair}";
-            return Subscribe(topic);
-        }
+        string topic = $"{TopicType.Ticker}:{pair}";
+        return Subscribe(topic);
+    }
 
-        private static string CreateRequest(string topic, string @event, long @ref)
-        {
-            return $"{{ \"topic\": \"{topic}\", \"event\": \"{@event}\", \"payload\": {{}}, \"ref\": {@ref} }}";
-        }
+    public IAsyncEnumerable<MessagePair> SubscribeTradesRaw(string pair)
+    {
+        if (pair == null) throw new ArgumentNullException(nameof(pair));
 
-        private string CreateJoinRequest(string topic)
-        {
-            return CreateRequest(topic, "phx_join", GetRef());
-        }
+        string topic = $"{TopicType.Trades}:{pair}";
+        return Subscribe(topic);
+    }
 
-        private string CreateHeartbeatMsg()
-        {
-            return CreateRequest("phoenix", "heartbeat", GetRef());
-        }
+    private static string CreateRequest(string topic, string @event, long @ref)
+    {
+        return $"{{ \"topic\": \"{topic}\", \"event\": \"{@event}\", \"payload\": {{}}, \"ref\": {@ref} }}";
+    }
 
-        private long GetRef() => Interlocked.Increment(ref _ref);
+    private string CreateJoinRequest(string topic)
+    {
+        return CreateRequest(topic, EventType.Join, GetRef());
+    }
 
+    private string CreateHeartbeatMsg()
+    {
+        return CreateRequest("phoenix", EventType.HeartBeat, GetRef());
+    }
 
-        private async Task Listen()
-        {
-            while (true)
-            {
-                try
-                {
-                    var msg = await ReadNextMessage().ConfigureAwait(false);
-                    _logger?.LogDebug("Received \"{msg}\"", msg);
+    private long GetRef() => Interlocked.Increment(ref _ref);
 
-                    var json = JObject.Parse(msg);
-                    var topic = json["topic"]!.ToString();
-
-                    AsyncProducerConsumerQueue<string>? messages;
-                    lock (_topicToReceiver)
-                    {
-                        _topicToReceiver.TryGetValue(topic, out messages);
-                    }
-
-                    if (messages != null)
-                        await messages.EnqueueAsync(msg);
-                }
-                catch (JsonReaderException ex)
-                {
-                    _logger?.LogError(ex, "Unable to parse message");
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "Unexpected error reading message");
-                    break;
-                }
-            }
-        }
-
-        private async Task DoHeartbeat()
+    private async Task Listen()
+    {
+        while (true)
         {
             try
             {
-                while (true)
+                var msgStr = await ReadNextMessage().ConfigureAwait(false);
+                _logger?.LogDebug("Received \"{Msg}\"", msgStr);
+
+                var message = JsonSerializer.Deserialize<Message>(msgStr, _serializerOptions)!;
+                AsyncProducerConsumerQueue<MessagePair>? messages;
+                lock (_topicToReceiver)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(45)).ConfigureAwait(false);
-                    
-                    _logger?.LogDebug("Sending heartbeat");
-                    await _webSocket.SendString(CreateHeartbeatMsg());
+                    _topicToReceiver.TryGetValue(message.Topic, out messages);
                 }
+
+                if (messages != null)
+                    await messages.EnqueueAsync(new MessagePair { Message = message, RawMessage = msgStr });
+            }
+            catch (JsonException ex)
+            {
+                _logger?.LogError(ex, "Unable to parse message");
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Heartbeat failed");
+                _logger?.LogError(ex, "Unexpected error reading message");
+                break;
             }
         }
+    }
 
-        private async Task<string> ReadNextMessage()
+    private async Task DoHeartbeat()
+    {
+        try
         {
-            WebSocketReceiveResult result;
-            var sb = new StringBuilder();
-
-            do
+            while (true)
             {
-                result = await _webSocket.ReceiveAsync(_buffer, CancellationToken.None);
-                var str = Encoding.Default.GetString(_buffer.Slice(0, result.Count));
-                sb.Append(str);
-            } while (!result.EndOfMessage);
-
-            return sb.ToString();
+                await Task.Delay(TimeSpan.FromSeconds(45)).ConfigureAwait(false);
+                
+                _logger?.LogDebug("Sending heartbeat");
+                await _webSocket.SendString(CreateHeartbeatMsg());
+            }
         }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Heartbeat failed");
+        }
+    }
+
+    private async Task<string> ReadNextMessage()
+    {
+        WebSocketReceiveResult result;
+        var sb = new StringBuilder();
+
+        do
+        {
+            result = await _webSocket.ReceiveAsync(_buffer, CancellationToken.None);
+            var str = Encoding.Default.GetString(_buffer.Slice(0, result.Count));
+            sb.Append(str);
+        } while (!result.EndOfMessage);
+
+        return sb.ToString();
     }
 }

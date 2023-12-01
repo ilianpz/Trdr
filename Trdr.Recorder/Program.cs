@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Trdr;
 using Trdr.App;
 using Trdr.Connectivity.CoinJar;
+using Trdr.Connectivity.CoinJar.Phoenix;
 
 var loggerFactory = Application.SetupDefaultLogger();
 var logger = loggerFactory.CreateLogger("Main");
@@ -63,9 +64,9 @@ void ReadChannels()
 
             try
             {
-                await foreach (string msg in connection.Subscribe(channel))
+                await foreach (MessagePair pair in connection.Subscribe(channel))
                 {
-                    channelLogger.LogInformation("{msg}", msg);
+                    channelLogger.LogInformation("{RawMessage}", pair.RawMessage);
                 }
             }
             catch (Exception ex)
