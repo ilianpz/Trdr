@@ -4,15 +4,15 @@ using Nito.AsyncEx;
 
 namespace Trdr;
 
-public static class Observable
+public static class Watcher
 {
-    public static Observable<T> Create<T>(IAsyncEnumerable<T> stream)
+    public static Watcher<T> Create<T>(IAsyncEnumerable<T> stream)
     {
-        return new Observable<T>(stream);
+        return new Watcher<T>(stream);
     }
 }
 
-public sealed class Observable<T>
+public sealed class Watcher<T>
 {
     private readonly AsyncLock _observableMutex = new();
     private readonly AsyncLock _observersMutex = new();
@@ -21,7 +21,7 @@ public sealed class Observable<T>
     private HashSet<Observer>? _observers = new();
     private Exception? _lastError;
     
-    internal Observable(IAsyncEnumerable<T> stream)
+    internal Watcher(IAsyncEnumerable<T> stream)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         ConsumeStream().Forget();
@@ -35,7 +35,7 @@ public sealed class Observable<T>
     /// Awaited task is true if <paramref name="predicate"/> returned true. False if the stream completed.
     /// </returns>
     /// <exception cref="ArgumentNullException"></exception>
-    public Task<bool> Wait(Func<T?, bool> predicate)
+    public Task<bool> Watch(Func<T?, bool> predicate)
     {
         if (predicate == null) throw new ArgumentNullException(nameof(predicate));
 

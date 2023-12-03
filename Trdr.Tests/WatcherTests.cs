@@ -2,17 +2,17 @@ using Nito.AsyncEx;
 
 namespace Trdr.Tests;
 
-public class Tests
+public sealed class WatcherTests
 {
     [Test]
-    public void Wait_can_succeed()
+    public void Watch_can_succeed()
     {
         var @event = new AsyncManualResetEvent(false);
-        var observable = Observable.Create(CreateStream());
+        var watcher = Watcher.Create(CreateStream());
 
-        Task<bool> obsTask = observable.Wait(i => i == 5);
+        Task<bool> watchTask = watcher.Watch(i => i == 5);
         @event.Set();
-        Assert.That(async () => await obsTask, Is.True);
+        Assert.That(async () => await watchTask, Is.True);
 
         async IAsyncEnumerable<int> CreateStream()
         {
@@ -25,14 +25,14 @@ public class Tests
     }
     
     [Test]
-    public void Wait_can_handle_completed_stream()
+    public void Watch_can_handle_completed_stream()
     {
         var @event = new AsyncManualResetEvent(false);
-        var observable = Observable.Create(CreateStream());
+        var watcher = Watcher.Create(CreateStream());
 
-        Task<bool> obsTask = observable.Wait(_ => true);
+        Task<bool> watchTask = watcher.Watch(_ => true);
         @event.Set();
-        Assert.That(async () => await obsTask, Is.False);
+        Assert.That(async () => await watchTask, Is.False);
 
 #pragma warning disable CS1998 - Rider complains about "useless" async
         async IAsyncEnumerable<int> CreateStream()
@@ -43,11 +43,11 @@ public class Tests
     }
     
     [Test]
-    public void Wait_can_throw()
+    public void Watch_can_throw()
     {
-        var observable = Observable.Create(CreateStream());
-        
-        Assert.That(async () => await observable.Wait(_ => true), Throws.Exception);
+        var watcher = Watcher.Create(CreateStream());
+
+        Assert.That(async () => await watcher.Watch(_ => true), Throws.Exception);
 
         async IAsyncEnumerable<int> CreateStream()
         {
