@@ -2,6 +2,6 @@
 
 public readonly struct MessagePair
 {
-    public Message Message { get; init; }
-    public string RawMessage { get; init; }
+    public required Message Message { get; init; }
+    public required string RawMessage { get; init; }
 }

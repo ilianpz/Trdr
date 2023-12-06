@@ -6,5 +6,5 @@ public sealed class MessageWithPayload<T> : Message
 {
     [JsonInclude]
     [JsonPropertyName("payload")]
-    public T Payload { get; private set; } = default!;
+    public required T Payload { get; init; }
 }

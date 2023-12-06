@@ -9,9 +9,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Sandbox", "Trdr.Sandbo
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Recorder", "Trdr.Recorder\Trdr.Recorder.csproj", "{7A1E795C-C329-4D21-8C9A-14C286DEC6FC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trdr.App", "Trdr.App\Trdr.App.csproj", "{B4ABF905-D4E0-4009-8765-8ACE601C8D35}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.App", "Trdr.App\Trdr.App.csproj", "{B4ABF905-D4E0-4009-8765-8ACE601C8D35}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trdr.Tests", "Trdr.Tests\Trdr.Tests.csproj", "{D3F17E27-43E3-458B-8FA1-971C6ADB01CF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Tests", "Trdr.Tests\Trdr.Tests.csproj", "{D3F17E27-43E3-458B-8FA1-971C6ADB01CF}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{4EA1F258-951F-4E75-BFCF-E0756C29B38D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Samples.SimpleArbitrage", "Samples\SimpleArbitrage\Trdr.Samples.SimpleArbitrage\Trdr.Samples.SimpleArbitrage.csproj", "{C4A63142-0F03-4241-B4F8-1C7947453714}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trdr.Samples.Tests", "Samples\Trdr.Samples.Tests\Trdr.Samples.Tests.csproj", "{88AF581A-9A4C-4701-85A8-B3FB8F259D37}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -39,9 +45,21 @@ Global
 		{D3F17E27-43E3-458B-8FA1-971C6ADB01CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D3F17E27-43E3-458B-8FA1-971C6ADB01CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D3F17E27-43E3-458B-8FA1-971C6ADB01CF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C4A63142-0F03-4241-B4F8-1C7947453714}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C4A63142-0F03-4241-B4F8-1C7947453714}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C4A63142-0F03-4241-B4F8-1C7947453714}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C4A63142-0F03-4241-B4F8-1C7947453714}.Release|Any CPU.Build.0 = Release|Any CPU
+		{88AF581A-9A4C-4701-85A8-B3FB8F259D37}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{88AF581A-9A4C-4701-85A8-B3FB8F259D37}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{88AF581A-9A4C-4701-85A8-B3FB8F259D37}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{88AF581A-9A4C-4701-85A8-B3FB8F259D37}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C4A63142-0F03-4241-B4F8-1C7947453714} = {4EA1F258-951F-4E75-BFCF-E0756C29B38D}
+		{88AF581A-9A4C-4701-85A8-B3FB8F259D37} = {4EA1F258-951F-4E75-BFCF-E0756C29B38D}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {78725CB3-7D13-465C-A62D-1A77DD41A2EF}

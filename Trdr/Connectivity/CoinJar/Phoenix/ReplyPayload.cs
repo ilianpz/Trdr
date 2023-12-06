@@ -6,5 +6,5 @@ public sealed class ReplyPayload
 {
     [JsonInclude]
     [JsonPropertyName("status")]
-    public string Status { get; private set; } = null!;
+    public required string Status { get; init; }
 }

@@ -9,7 +9,7 @@ public class Message
 
     [JsonInclude]
     [JsonPropertyName(TopicProperty)]
-    public string Topic { get; private set; } = null!;
+    public required string Topic { get; init; }
 
     [JsonInclude]
     [JsonPropertyName("ref")]
@@ -17,5 +17,5 @@ public class Message
 
     [JsonInclude]
     [JsonPropertyName(EventProperty)]
-    public string Event { get; private set; } = null!;
+    public required string Event { get; init; }
 }
