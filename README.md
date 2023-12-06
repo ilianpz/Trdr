@@ -1,5 +1,4 @@
 # Trdr
-
 An experimental trading bot framework for .Net.
 
 Trdr aims to:
