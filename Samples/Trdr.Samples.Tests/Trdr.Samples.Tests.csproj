@@ -18,7 +18,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\SimpleArbitrage\Trdr.Samples.SimpleArbitrage\Trdr.Samples.SimpleArbitrage.csproj" />
+      <ProjectReference Include="..\Trdr.Samples.SimpleArbitrage\Trdr.Samples.SimpleArbitrage.csproj" />
     </ItemGroup>
 
 </Project>
