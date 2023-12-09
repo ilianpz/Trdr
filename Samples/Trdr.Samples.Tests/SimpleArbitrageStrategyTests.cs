@@ -26,7 +26,7 @@ public class SimpleArbitrageStrategyTests
         var cts = new CancellationTokenSource();
         strategy.Run(cts.Token).Forget();
 
-        binanceSubject.OnNext(new Ticker { Ask = 10, Bid = 9.5m });
+        binanceSubject.OnNext(new Ticker { AskRaw = "10", BidRaw = "9.5m" });
         coinJarSubject.OnNext(new TickerPayload { AskRaw = "12", BidRaw = "11" });
 
         Assert.That(buyAtBinance, Is.EqualTo(1));

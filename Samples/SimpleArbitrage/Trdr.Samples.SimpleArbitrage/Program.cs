@@ -1,9 +1,6 @@
 ﻿using Trdr.Samples.SimpleArbitrage;
-using Binance = Trdr.Connectivity.Binance.Connection;
+using Binance = Trdr.Connectivity.Binance.Streams;
 using CoinJar = Trdr.Connectivity.CoinJar.Connection;
-
-var binance = Binance.Create();
-await binance.Connect();
 
 var coinJar = CoinJar.Create();
 await coinJar.Connect();
@@ -11,7 +8,7 @@ await coinJar.Connect();
 const string symbol = "XRPUSDT";
 
 var coinJarTicker = coinJar.SubscribeTicker(symbol);
-var binanceTicker = binance.SubscribeTicker(symbol);
+var binanceTicker = Binance.SubscribeTicker(symbol);
 
 var strategy = new SimpleArbitrageStrategy(
     coinJarTicker,
