@@ -34,7 +34,7 @@ public sealed class SimpleArbitrageStrategy
         decimal sell = 0;
         sentinel.Subscribe(_coinJarTicker, ticker => sell = ticker.Bid);
 
-        sentinel.Start(); // Start the subscriptions
+        await sentinel.Start(); // Start the subscriptions
 
         // This simple strategy waits for an arbitrage opportunity by buying low at Binance
         // and selling high at CoinJar.
@@ -43,17 +43,12 @@ public sealed class SimpleArbitrageStrategy
         // It also ignores transaction fees and bid/ask quantities.
         // This only serves to illustrate how the framework is meant to be used.
 
-        while (true)
+        do
         {
-            await sentinel.Watch(
-                () =>
-                    sell > 0 && buy > 0 && // <-- Wait for both events
-                    sell - buy > 0.002m,
-                cancellationToken);
+            await sentinel.Watch(() => sell - buy > 0.002m, cancellationToken);
 
             _buyAtBinance(buy);
             _sellAtCoinJar(sell);
-        }
-        // ReSharper disable once FunctionNeverReturns
+        } while (await sentinel.NextEvent(cancellationToken));
     }
 }

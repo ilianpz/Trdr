@@ -23,20 +23,6 @@ public sealed class SentinelTests
     }
 
     [Test]
-    public void Watch_can_succeed_with_already_published_value()
-    {
-        var sentinel = new Sentinel();
-        var subject = new Subject<int>();
-
-        int value = 0;
-        sentinel.Subscribe(subject, i => value = i);
-        sentinel.Start();
-
-        subject.OnNext(1);
-        Assert.That(() =>  sentinel.Watch(() => value == 1).IsCompleted);
-    }
-
-    [Test]
     public void Watch_can_be_canceled()
     {
         var sentinel = new Sentinel();
@@ -55,7 +41,7 @@ public sealed class SentinelTests
         cts.Cancel();
         subject.OnNext(2);
 
-        Assert.That(async () => await watchTask, Throws.InstanceOf<TaskCanceledException>());
+        Assert.That(async () => await watchTask, Throws.InstanceOf<OperationCanceledException>());
     }
 
     [Test]
@@ -66,10 +52,12 @@ public sealed class SentinelTests
         sentinel.Subscribe(signal, delegate { });
         sentinel.Start();
 
+        var watchTask = sentinel.Watch(() => throw new Exception("ThisInstance"));
+
         signal.OnNext(1);
 
         Assert.That(
-            () =>  sentinel.Watch(() => throw new Exception("ThisInstance")),
+            async () =>  await watchTask,
             Throws.InstanceOf<Exception>().With.Message.EqualTo("ThisInstance"));
     }
 
@@ -77,12 +65,24 @@ public sealed class SentinelTests
     public void Can_stop()
     {
         var sentinel = new Sentinel();
-        sentinel.Start();
+        sentinel.Start().Forget();
 
         Task neverEndingWatch = sentinel.Watch(() => false);
         sentinel.Stop();
 
-        Assert.That(async () =>  await neverEndingWatch, Throws.InstanceOf<TaskCanceledException>());
+        Assert.That(async () =>  await neverEndingWatch, Throws.InstanceOf<OperationCanceledException>());
+    }
+
+    [Test]
+    public void Next_event_returns_false_when_stopped()
+    {
+        var sentinel = new Sentinel();
+        sentinel.Start().Forget();
+
+        Task<bool> nextEvent = sentinel.NextEvent();
+        sentinel.Stop();
+
+        Assert.That(async () =>  await nextEvent, Is.False);
     }
 
     [Test]

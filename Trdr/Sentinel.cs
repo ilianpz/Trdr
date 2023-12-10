@@ -1,15 +1,16 @@
 ﻿using System.Reactive.Linq;
 using System.Reactive.Subjects;
+using Nito.AsyncEx;
 
 namespace Trdr;
 
-public class Sentinel
+public sealed class Sentinel
 {
     private readonly Subject<int> _signal = new();
-    private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly HashSet<PredicatePair> _predicates = new();
+    private readonly CancellationTokenSource _stopCts = new();
+    private readonly AsyncCountdownEvent _startEvent = new(0);
+    private readonly AsyncAutoResetEvent _hasNextEvent = new(false);
 
-    private bool _hasUnobservedSignal;
     private bool _started;
     private bool _stopped;
     private Action _start = delegate {  };
@@ -47,9 +48,16 @@ public class Sentinel
     {
         if (observable == null) throw new ArgumentNullException(nameof(observable));
         if (handler == null) throw new ArgumentNullException(nameof(handler));
+        VerifyStartStop();
 
         // Consume the stream only when Start() has been called.
         var connectable = observable.Publish();
+
+        // Count all subscriptions and signal the first event from each subscription.
+        // This will enable us to signal that we have started only when each
+        // subscription has emitted its first item.
+        _startEvent.AddCount(1);
+        connectable.FirstAsync().Subscribe(_ => _startEvent.Signal());
 
         var subscription = connectable.Subscribe(
             item =>
@@ -57,7 +65,8 @@ public class Sentinel
                 lock (_signal)
                 {
                     // Because multiple streams can have different thread contexts. We
-                    // need to synchronize here so callers won't have to do it themselves.
+                    // need to synchronize calling the handler so user won't have to do it
+                    // themselves.
                     handler(item);
                 }
 
@@ -65,13 +74,13 @@ public class Sentinel
                 // evaluate all of our sentinel predicates.
                 _signal.OnNext(0);
             });
-        _cancellationTokenSource.Token.Register(() => subscription.Dispose());
+        _stopCts.Token.Register(() => subscription.Dispose());
 
         _start += () =>
         {
             // Start the stream.
             //
-            // Connect isn't defined on a base non-generic interface. So we use a delegate here
+            // Connect isn't defined on a base1 non-generic interface. So we use a delegate here
             // as a workaround to call instances of different types when Start() is called.
             connectable.Connect();
         };
@@ -80,51 +89,18 @@ public class Sentinel
     /// <summary>
     /// Starts all subscriptions.
     /// </summary>
+    /// <returns>
+    /// A <see cref="Task"/> that continues after each subscription has emitted its first item.
+    /// </returns>
     /// <exception cref="InvalidOperationException"></exception>
-    public void Start()
+    public Task Start()
     {
-        if (_started) throw new InvalidOperationException("This instance has already started.");
-        if (_stopped) throw new InvalidOperationException("This instance has already stopped.");
-
-        var subscription = _signal.Subscribe(_ =>
-        {
-            List<PredicatePair> predicatesCopy;
-            lock (_predicates)
-            {
-                // Copy to prevent modifying while enumerating.
-                predicatesCopy = _predicates.ToList();
-                _hasUnobservedSignal = predicatesCopy.Count == 0;
-            }
-
-            foreach (var predicatePair in predicatesCopy.ToList())
-            {
-                try
-                {
-                    bool isTrue;
-                    lock (_signal)
-                    {
-                        // This signal can come from different thread contexts. We
-                        // need to synchronize here so callers won't have to do it themselves.
-                        isTrue = predicatePair.Predicate();
-                    }
-
-                    if (isTrue)
-                    {
-                        Remove(predicatePair);
-                        predicatePair.Tcs.TrySetResult();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Remove(predicatePair);
-                    predicatePair.Tcs.TrySetException(ex);
-                }
-            }
-        });
-        _cancellationTokenSource.Token.Register(() => subscription.Dispose());
+        VerifyStartStop();
 
         _start();
         _started = true;
+
+        return _startEvent.WaitAsync();
     }
 
     public void Stop()
@@ -132,9 +108,28 @@ public class Sentinel
         if (_stopped)
             return;
 
-        _cancellationTokenSource.Cancel();
-        _cancellationTokenSource.Dispose();
+        _stopCts.Cancel();
+        _stopCts.Dispose();
         _stopped = true;
+    }
+
+    public async Task<bool> NextEvent(CancellationToken cancellationToken = default)
+    {
+        using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(
+            _stopCts.Token, cancellationToken);
+
+        try
+        {
+            await _hasNextEvent.WaitAsync(cts.Token);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            if (_stopCts.IsCancellationRequested)
+                return false;
+
+            throw;
+        }
     }
 
     /// <summary>
@@ -147,55 +142,44 @@ public class Sentinel
     public async Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default)
     {
         if (predicate == null) throw new ArgumentNullException(nameof(predicate));
-        if (!_started) throw new InvalidOperationException("This instance has not started.");
         if (_stopped) throw new InvalidOperationException("This instance has already stopped.");
 
-        lock (_predicates)
-        {
-            // If we have an unobserved signal. Check if the given predicate is true. If it is, just return fast.
-            // No need to store it.
-            if (_hasUnobservedSignal && predicate())
-                return;
-        }
+        if (predicate())
+            return;
 
-        var tcs = new TaskCompletionSource();
-        var predicatePair = new PredicatePair(predicate, tcs);
-        lock (_predicates)
-        {
-            _predicates.Add(predicatePair);
-        }
+        TaskCompletionSource tcs = new();
+        var subscription = _signal.Subscribe(
+            _ =>
+            {
+                try
+                {
+                    if (predicate())
+                        tcs.TrySetResult();
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
 
-        await using (_cancellationTokenSource.Token.Register(OnCanceled).ConfigureAwait(false))
+        using (subscription)
+        await using (_stopCts.Token.Register(OnCanceled).ConfigureAwait(false))
         await using (cancellationToken.Register(OnCanceled))
         {
             await tcs.Task;
         }
 
+        return;
+
         void OnCanceled()
         {
-            // The watch has been canceled. We need to remove the predicate.
-           Remove(predicatePair);
             tcs.TrySetCanceled(cancellationToken);
         }
     }
 
-    private void Remove(PredicatePair predicatePair)
+    private void VerifyStartStop()
     {
-        lock (_predicates)
-        {
-            _predicates.Remove(predicatePair);
-        }
-    }
-
-    private class PredicatePair
-    {
-        public PredicatePair(Func<bool> predicate, TaskCompletionSource tcs)
-        {
-            Predicate = predicate;
-            Tcs = tcs;
-        }
-
-        public Func<bool> Predicate { get; }
-        public TaskCompletionSource Tcs { get; }
+        if (_started) throw new InvalidOperationException("This instance has already started.");
+        if (_stopped) throw new InvalidOperationException("This instance has already stopped.");
     }
 }

@@ -1,6 +1,4 @@
 ﻿using System.Runtime.CompilerServices;
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 
 namespace Trdr.Connectivity.Binance;
