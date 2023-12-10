@@ -7,7 +7,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr", "Trdr\Trdr.csproj", 
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Sandbox", "Trdr.Sandbox\Trdr.Sandbox.csproj", "{7E520C95-52B7-47C0-A680-CB0B8F90FDA1}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Recorder", "Trdr.Recorder\Trdr.Recorder.csproj", "{7A1E795C-C329-4D21-8C9A-14C286DEC6FC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Recorder", "Tools\Trdr.Recorder\Trdr.Recorder.csproj", "{7A1E795C-C329-4D21-8C9A-14C286DEC6FC}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.App", "Trdr.App\Trdr.App.csproj", "{B4ABF905-D4E0-4009-8765-8ACE601C8D35}"
 EndProject
@@ -18,6 +18,8 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Trdr.Samples.SimpleArbitrage", "Samples\Trdr.Samples.SimpleArbitrage\Trdr.Samples.SimpleArbitrage.csproj", "{C4A63142-0F03-4241-B4F8-1C7947453714}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trdr.Samples.Tests", "Samples\Trdr.Samples.Tests\Trdr.Samples.Tests.csproj", "{88AF581A-9A4C-4701-85A8-B3FB8F259D37}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{18F6405E-ED3A-44DC-A529-CA632163071D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -60,6 +62,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{C4A63142-0F03-4241-B4F8-1C7947453714} = {4EA1F258-951F-4E75-BFCF-E0756C29B38D}
 		{88AF581A-9A4C-4701-85A8-B3FB8F259D37} = {4EA1F258-951F-4E75-BFCF-E0756C29B38D}
+		{7A1E795C-C329-4D21-8C9A-14C286DEC6FC} = {18F6405E-ED3A-44DC-A529-CA632163071D}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {78725CB3-7D13-465C-A62D-1A77DD41A2EF}

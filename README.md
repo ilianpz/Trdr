@@ -1,5 +1,5 @@
 # Trdr
-An experimental work-in-progress trading bot framework for .Net.
+An experimental work-in-progress trading bot framework for .NET.
 
 Trdr aims to:
 1. Make it easier to handle asynchronous events when implementing trading strategies.

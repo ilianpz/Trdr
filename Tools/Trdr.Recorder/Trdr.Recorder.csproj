@@ -13,8 +13,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Trdr.App\Trdr.App.csproj" />
-    <ProjectReference Include="..\Trdr\Trdr.csproj" />
+    <ProjectReference Include="..\..\Trdr.App\Trdr.App.csproj" />
+    <ProjectReference Include="..\..\Trdr\Trdr.csproj" />
   </ItemGroup>
 
 </Project>
