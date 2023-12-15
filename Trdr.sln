@@ -21,6 +21,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trdr.Samples.Tests", "Sampl
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tools", "Tools", "{18F6405E-ED3A-44DC-A529-CA632163071D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trdr.Benchmarks", "Trdr.Benchmarks\Trdr.Benchmarks.csproj", "{DD699466-88FA-4F27-ABE6-3ABA0832FCDC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Trdr.Benchmarks.Debug", "Trdr.Benchmarks.Debug\Trdr.Benchmarks.Debug.csproj", "{13EF8073-C20A-46DF-8D3E-31C07A50DC1A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -55,6 +59,14 @@ Global
 		{88AF581A-9A4C-4701-85A8-B3FB8F259D37}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{88AF581A-9A4C-4701-85A8-B3FB8F259D37}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{88AF581A-9A4C-4701-85A8-B3FB8F259D37}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DD699466-88FA-4F27-ABE6-3ABA0832FCDC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DD699466-88FA-4F27-ABE6-3ABA0832FCDC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DD699466-88FA-4F27-ABE6-3ABA0832FCDC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DD699466-88FA-4F27-ABE6-3ABA0832FCDC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13EF8073-C20A-46DF-8D3E-31C07A50DC1A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13EF8073-C20A-46DF-8D3E-31C07A50DC1A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13EF8073-C20A-46DF-8D3E-31C07A50DC1A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13EF8073-C20A-46DF-8D3E-31C07A50DC1A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

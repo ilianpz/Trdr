@@ -2,6 +2,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
+using Trdr.Async;
 using Trdr.Connectivity.CoinJar.Phoenix;
 
 namespace Trdr.Connectivity.CoinJar;

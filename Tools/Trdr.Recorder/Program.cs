@@ -1,7 +1,7 @@
 ﻿using System.CommandLine;
 using Microsoft.Extensions.Logging;
-using Trdr;
 using Trdr.App;
+using Trdr.Async;
 using Trdr.Connectivity.CoinJar;
 using Trdr.Connectivity.CoinJar.Phoenix;
 

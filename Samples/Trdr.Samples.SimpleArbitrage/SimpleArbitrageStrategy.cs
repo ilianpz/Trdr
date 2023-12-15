@@ -3,7 +3,7 @@ using Trdr.Connectivity.CoinJar.Phoenix;
 
 namespace Trdr.Samples.SimpleArbitrage;
 
-public sealed class SimpleArbitrageStrategy
+public sealed class SimpleArbitrageStrategy : Strategy
 {
     private readonly IAsyncEnumerable<TickerPayload> _coinJarTicker;
     private readonly IAsyncEnumerable<Ticker> _binanceTicker;
@@ -22,19 +22,18 @@ public sealed class SimpleArbitrageStrategy
         _sellAtCoinJar = sellAtCoinJar ?? throw new ArgumentNullException(nameof(sellAtCoinJar));
     }
 
-    public async Task Run(CancellationToken cancellationToken = default)
+    protected override async Task Run(CancellationToken cancellationToken)
     {
-        var sentinel = new Sentinel();
+        decimal buy = 0;
+        decimal sell = 0;
 
         // Subscribe to Binance's ticker and store its ask everytime it's updated.
-        decimal buy = 0;
-        sentinel.Subscribe(_binanceTicker, ticker => buy = ticker.Ask);
-
         // Subscribe to CoinJar's ticker and store its bid everytime it's updated.
-        decimal sell = 0;
-        sentinel.Subscribe(_coinJarTicker, ticker => sell = ticker.Bid);
+        var sentinel =
+            CreateSentinel(_binanceTicker, ticker => buy = ticker.Ask)
+                .Combine(_coinJarTicker, ticker => sell = ticker.Bid);
 
-        await sentinel.Start(); // Start the subscriptions
+        sentinel.Start(); // Start the subscriptions
 
         // This simple strategy waits for an arbitrage opportunity by buying low at Binance
         // and selling high at CoinJar.
@@ -47,8 +46,11 @@ public sealed class SimpleArbitrageStrategy
         {
             await sentinel.Watch(() => sell - buy > 0.002m, cancellationToken);
 
+            // Buy at Binance then sell at CoinJar
             _buyAtBinance(buy);
             _sellAtCoinJar(sell);
-        } while (await sentinel.NextEvent(cancellationToken));
+        } while (true);
+
+        // ReSharper disable once FunctionNeverReturns
     }
 }

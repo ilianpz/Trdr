@@ -12,9 +12,11 @@ public class SimpleArbitrageStrategyTests
     [Test]
     public async Task Can_buy_and_sell()
     {
+        // Mock a source of ticker events.
         var binanceSubject = new Subject<Ticker>();
         var coinJarSubject = new Subject<TickerPayload>();
 
+        // Synchronize so we can test the scenario reliably.
         var countdown = new AsyncCountdownEvent(2);
 
         int buyAtBinance = 0;
@@ -34,13 +36,28 @@ public class SimpleArbitrageStrategyTests
                 countdown.Signal();
             });
 
-        strategy.Run().Forget();
+        await strategy.Start();
 
-        binanceSubject.OnNext(new Ticker { AskRaw = "10", BidRaw = "9.5m" });
-        coinJarSubject.OnNext(new TickerPayload { AskRaw = "12", BidRaw = "11" });
+        // Generate events that will trigger a buy and sell.
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" });
+
+        // Wait for the strategy to process the events
+        await countdown.WaitAsync();
+        countdown.AddCount(2);
+
+        // Generate events that will NOT trigger a buy and sell.
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.201" });
+
+        // Generate events that will trigger a buy and sell.
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" });
 
         await countdown.WaitAsync();
-        Assert.That(buyAtBinance, Is.EqualTo(1));
-        Assert.That(sellAtCoinJar, Is.EqualTo(1));
+
+        // Strategy should have bought and sold twice.
+        Assert.That(buyAtBinance, Is.EqualTo(2));
+        Assert.That(sellAtCoinJar, Is.EqualTo(2));
     }
 }

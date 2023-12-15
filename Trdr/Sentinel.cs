@@ -1,185 +1,125 @@
-﻿using System.Reactive.Linq;
-using System.Reactive.Subjects;
 using Nito.AsyncEx;
+using Trdr.Async;
+using Trdr.Reactive;
+using TaskExtensions = Trdr.Async.TaskExtensions;
 
 namespace Trdr;
 
-public sealed class Sentinel
+public sealed class Sentinel<T> : IDisposable
 {
-    private readonly Subject<int> _signal = new();
-    private readonly CancellationTokenSource _stopCts = new();
-    private readonly AsyncCountdownEvent _startEvent = new(0);
-    private readonly AsyncAutoResetEvent _hasNextEvent = new(false);
+    private readonly IObservable<T> _observable;
+    private readonly AsyncProducerConsumerQueue<T> _queue = new();
+    private readonly AsyncMultiAutoResetEvent _signal = new();
+
+    private readonly Action<T> _handler;
+    private readonly TaskScheduler _scheduler;
+    private readonly CancellationTokenSource _disposeCts = new();
 
     private bool _started;
-    private bool _stopped;
-    private Action _start = delegate {  };
+    private IDisposable? _subscription;
 
-    /// <summary>
-    /// Subscribes to the give <paramref name="enumerable"/>.
-    /// </summary>
-    /// <param name="enumerable"></param>
-    /// <param name="handler"></param>
-    /// <typeparam name="T"></typeparam>
-    /// <exception cref="ArgumentNullException"></exception>
-    /// <remarks>
-    /// Note, this only registers <paramref name="handler"/> to the given <paramref name="enumerable"/>.
-    /// <see cref="Start"/> still has to be called in order to start the subscription.
-    /// </remarks>
-    public void Subscribe<T>(IAsyncEnumerable<T> enumerable, Action<T> handler)
+    private Sentinel(IObservable<T> observable, Action<T> handler, TaskScheduler scheduler)
     {
-        if (enumerable == null) throw new ArgumentNullException(nameof(enumerable));
+        _observable = observable ?? throw new ArgumentNullException(nameof(observable));
+        _handler = handler ?? throw new ArgumentNullException(nameof(handler));
+        _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
 
-        Subscribe(enumerable.ToObservable(), handler);
+        // We need to publish items on the given scheduler which should be the strategy's main thread.
+        TaskExtensions.Run(Publish, _scheduler).Forget();
     }
 
-    /// <summary>
-    /// Subscribes to the give <paramref name="observable"/>.
-    /// </summary>
-    /// <param name="observable"></param>
-    /// <param name="handler"></param>
-    /// <typeparam name="T"></typeparam>
-    /// <exception cref="ArgumentNullException"></exception>
-    /// <remarks>
-    /// Note, this only registers <paramref name="handler"/> to the given <paramref name="observable"/>.
-    /// <see cref="Start"/> still has to be called in order to start the subscription.
-    /// </remarks>
-    public void Subscribe<T>(IObservable<T> observable, Action<T> handler)
+    internal static Sentinel<TNew> Create<TNew>(IAsyncEnumerable<TNew> enumerable, Action<TNew> handler, TaskScheduler taskScheduler)
     {
-        if (observable == null) throw new ArgumentNullException(nameof(observable));
+        return Create(enumerable.ToObservable(), handler, taskScheduler);
+    }
+
+    internal static Sentinel<TNew> Create<TNew>(IObservable<TNew> observable, Action<TNew> handler, TaskScheduler taskScheduler)
+    {
+        return new Sentinel<TNew>(observable, handler, taskScheduler);
+    }
+
+    public Sentinel<(T, TOther)> Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<TOther> handler)
+    {
+        return Combine(enumerable.ToObservable(), handler);
+    }
+
+    public Sentinel<(T, TOther)> Combine<TOther>(IObservable<TOther> observable, Action<TOther> handler)
+    {
         if (handler == null) throw new ArgumentNullException(nameof(handler));
-        VerifyStartStop();
 
-        // Consume the stream only when Start() has been called.
-        var connectable = observable.Publish();
+        VerifyNotStarted();
 
-        // Count all subscriptions and signal the first event from each subscription.
-        // This will enable us to signal that we have started only when each
-        // subscription has emitted its first item.
-        _startEvent.AddCount(1);
-        connectable.FirstAsync().Subscribe(_ => _startEvent.Signal());
+        return new Sentinel<(T, TOther)>(_observable.ZipWithLatest(observable), Handle, _scheduler);
 
-        var subscription = connectable.Subscribe(
-            item =>
-            {
-                lock (_signal)
-                {
-                    // Because multiple streams can have different thread contexts. We
-                    // need to synchronize calling the handler so user won't have to do it
-                    // themselves.
-                    handler(item);
-                }
-
-                // Any time we got an item from one of our source streams, we need to
-                // evaluate all of our sentinel predicates.
-                _signal.OnNext(0);
-            });
-        _stopCts.Token.Register(() => subscription.Dispose());
-
-        _start += () =>
+        // We need to wrap the original handler because the generic type changes
+        // with the new Event instance.
+        void Handle((T, TOther) item)
         {
-            // Start the stream.
-            //
-            // Connect isn't defined on a base1 non-generic interface. So we use a delegate here
-            // as a workaround to call instances of different types when Start() is called.
-            connectable.Connect();
-        };
+            var newHandler = handler;
+
+            _handler(item.Item1);
+            newHandler(item.Item2);
+        }
     }
 
-    /// <summary>
-    /// Starts all subscriptions.
-    /// </summary>
-    /// <returns>
-    /// A <see cref="Task"/> that continues after each subscription has emitted its first item.
-    /// </returns>
-    /// <exception cref="InvalidOperationException"></exception>
-    public Task Start()
+    public void Start()
     {
-        VerifyStartStop();
+        VerifyNotStarted();
 
-        _start();
+        _subscription = _observable.Subscribe(item => _queue.Enqueue(item));
         _started = true;
-
-        return _startEvent.WaitAsync();
     }
 
-    public void Stop()
-    {
-        if (_stopped)
-            return;
-
-        _stopCts.Cancel();
-        _stopCts.Dispose();
-        _stopped = true;
-    }
-
-    public async Task<bool> NextEvent(CancellationToken cancellationToken = default)
-    {
-        using CancellationTokenSource cts = CancellationTokenSource.CreateLinkedTokenSource(
-            _stopCts.Token, cancellationToken);
-
-        try
-        {
-            await _hasNextEvent.WaitAsync(cts.Token);
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            if (_stopCts.IsCancellationRequested)
-                return false;
-
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Asynchronously waits for a given <paramref name="predicate"/> to be true.
-    /// </summary>
-    /// <param name="predicate"></param>
-    /// <param name="cancellationToken"></param>
-    /// <exception cref="ArgumentNullException"></exception>
-    /// <exception cref="InvalidOperationException"></exception>
     public async Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default)
     {
         if (predicate == null) throw new ArgumentNullException(nameof(predicate));
-        if (_stopped) throw new InvalidOperationException("This instance has already stopped.");
 
-        if (predicate())
-            return;
-
-        TaskCompletionSource tcs = new();
-        var subscription = _signal.Subscribe(
-            _ =>
-            {
-                try
-                {
-                    if (predicate())
-                        tcs.TrySetResult();
-                }
-                catch (Exception ex)
-                {
-                    tcs.TrySetException(ex);
-                }
-            });
-
-        using (subscription)
-        await using (_stopCts.Token.Register(OnCanceled).ConfigureAwait(false))
-        await using (cancellationToken.Register(OnCanceled))
+        while (true)
         {
-            await tcs.Task;
-        }
-
-        return;
-
-        void OnCanceled()
-        {
-            tcs.TrySetCanceled(cancellationToken);
+            await Wait(cancellationToken);
+            if (predicate())
+                return;
         }
     }
 
-    private void VerifyStartStop()
+    public Task Wait(CancellationToken cancellationToken = default)
     {
-        if (_started) throw new InvalidOperationException("This instance has already started.");
-        if (_stopped) throw new InvalidOperationException("This instance has already stopped.");
+       return _signal.WaitAsync(cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        if (_subscription == null) return;
+
+        _subscription.Dispose();
+        _subscription = null;
+
+        _disposeCts.Cancel();
+        _disposeCts.Dispose();
+    }
+
+    private void VerifyNotStarted()
+    {
+        if (_started)
+            throw new InvalidOperationException("Already started.");
+    }
+
+    private async Task Publish()
+    {
+        try
+        {
+            while (true)
+            {
+                var item = await _queue.DequeueAsync(_disposeCts.Token);
+
+                try
+                {
+                    _handler(item);
+                    _signal.Set();
+                }
+                catch { /* NOP */ }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 }

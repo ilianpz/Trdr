@@ -1,6 +1,7 @@
 ﻿using System.Net.WebSockets;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Trdr.Async;
 
 namespace Trdr.Connectivity;
 

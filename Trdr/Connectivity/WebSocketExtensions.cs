@@ -1,7 +1,7 @@
 ﻿using System.Net.WebSockets;
 using System.Text;
 
-namespace Trdr
+namespace Trdr.Connectivity
 {
     public static class WebSocketExtensions
     {

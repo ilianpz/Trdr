@@ -15,4 +15,5 @@ var strategy = new SimpleArbitrageStrategy(
     binanceTicker,
     buy => Console.WriteLine($"Buy at Binance @ {buy}"),
     sell => Console.WriteLine($"Sell at CoinJar @ {sell}"));
-await strategy.Run();
+var runTask = await strategy.Start();
+await runTask;

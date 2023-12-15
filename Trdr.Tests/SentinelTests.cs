@@ -1,105 +1,55 @@
-using System.Reactive.Subjects;
+﻿using System.Reactive.Subjects;
 
 namespace Trdr.Tests;
 
-public sealed class SentinelTests
+public class SentinelTests
 {
     [Test]
-    public void Watch_can_succeed()
+    public async Task Can_combine_2()
     {
-        var sentinel = new Sentinel();
-        var subject = new Subject<int>();
+        var subject1 = new Subject<int>();
+        var subject2 = new Subject<int>();
 
-        int value = 0;
-        sentinel.Subscribe(subject, i => value = i);
-        sentinel.Start();
+        int item1 = 0;
+        int item2 = 0;
+        var @event = Sentinel<int>.Create(subject1, item => item1 = item, TaskScheduler.Default)
+            .Combine(subject2, item => item2 = item);
 
-        Task watchTask = sentinel.Watch(() => value == 2);
+        @event.Start();
 
-        subject.OnNext(1);
-        Assert.That(() =>  watchTask.IsCompleted, Is.False);
-        subject.OnNext(2);
-        Assert.That(() =>  watchTask.IsCompleted);
+        subject1.OnNext(1);
+        subject2.OnNext(2);
+
+        await @event.Wait();
+
+        Assert.That(item1, Is.EqualTo(1));
+        Assert.That(item2, Is.EqualTo(2));
     }
 
     [Test]
-    public void Watch_can_be_canceled()
+    public async Task Can_combine_3()
     {
-        var sentinel = new Sentinel();
-        var subject = new Subject<int>();
+        var subject1 = new Subject<int>();
+        var subject2 = new Subject<int>();
+        var subject3 = new Subject<int>();
 
-        int value = 0;
-        sentinel.Subscribe(subject, i => value = i);
-        sentinel.Start();
+        int item1 = 0;
+        int item2 = 0;
+        int item3 = 0;
+        var @event = Sentinel<int>.Create(subject1, item => item1 = item, TaskScheduler.Default)
+            .Combine(subject2, item => item2 = item)
+            .Combine(subject3, item => item3 = item);
 
-        var cts = new CancellationTokenSource();
-        Task watchTask = sentinel.Watch(() => value == 2, cts.Token);
+        @event.Start();
 
-        subject.OnNext(1);
-        Assert.That(watchTask.IsCompleted, Is.False);
+        subject1.OnNext(1);
+        subject2.OnNext(2);
+        subject3.OnNext(3);
 
-        cts.Cancel();
-        subject.OnNext(2);
+        await @event.Wait();
 
-        Assert.That(async () => await watchTask, Throws.InstanceOf<OperationCanceledException>());
-    }
-
-    [Test]
-    public void Watch_can_throw()
-    {
-        var signal = new Subject<int>();
-        var sentinel = new Sentinel();
-        sentinel.Subscribe(signal, delegate { });
-        sentinel.Start();
-
-        var watchTask = sentinel.Watch(() => throw new Exception("ThisInstance"));
-
-        signal.OnNext(1);
-
-        Assert.That(
-            async () =>  await watchTask,
-            Throws.InstanceOf<Exception>().With.Message.EqualTo("ThisInstance"));
-    }
-
-    [Test]
-    public void Can_stop()
-    {
-        var sentinel = new Sentinel();
-        sentinel.Start().Forget();
-
-        Task neverEndingWatch = sentinel.Watch(() => false);
-        sentinel.Stop();
-
-        Assert.That(async () =>  await neverEndingWatch, Throws.InstanceOf<OperationCanceledException>());
-    }
-
-    [Test]
-    public void Next_event_returns_false_when_stopped()
-    {
-        var sentinel = new Sentinel();
-        sentinel.Start().Forget();
-
-        Task<bool> nextEvent = sentinel.NextEvent();
-        sentinel.Stop();
-
-        Assert.That(async () =>  await nextEvent, Is.False);
-    }
-
-    [Test]
-    public void Watch_supports_async_enumerable()
-    {
-        var sentinel = new Sentinel();
-        var subject = new Subject<int>();
-
-        int value = 0;
-        sentinel.Subscribe(subject.ToAsyncEnumerable(), i => value = i);
-        sentinel.Start();
-
-        Task watchTask = sentinel.Watch(() => value == 2);
-
-        subject.OnNext(1);
-        Assert.That(() =>  watchTask.IsCompleted, Is.False);
-        subject.OnNext(2);
-        Assert.That(() =>  watchTask.IsCompleted);
+        Assert.That(item1, Is.EqualTo(1));
+        Assert.That(item2, Is.EqualTo(2));
+        Assert.That(item3, Is.EqualTo(3));
     }
 }

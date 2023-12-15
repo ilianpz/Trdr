@@ -1,4 +1,4 @@
-﻿namespace Trdr
+﻿namespace Trdr.Async
 {
     public static class TaskExtensions
     {
@@ -17,6 +17,20 @@
             {
                 // Ignored
             }
+        }
+
+        /// <summary>
+        /// Runs a task which continues on a given scheduler.
+        /// </summary>
+        public static Task Run(Func<Task> func, TaskScheduler scheduler)
+        {
+            return
+                Task<Task>.Factory.StartNew(
+                    func,
+                    CancellationToken.None,
+                    TaskCreationOptions.DenyChildAttach,
+                    scheduler)
+                    .Unwrap();
         }
     }
 }
