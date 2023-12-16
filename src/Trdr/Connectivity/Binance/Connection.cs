@@ -26,6 +26,7 @@ public sealed class Connection : WebSocketConnection
             string message = await _receiver.DequeueAsync(cancellationToken).ConfigureAwait(false);
             yield return message;
         }
+        // ReSharper disable once IteratorNeverReturns
     }
 
     protected override Task OnMessageReceived(string msgStr)
