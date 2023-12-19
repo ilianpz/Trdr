@@ -12,10 +12,10 @@ public abstract class WebSocketConnection
     private readonly ClientWebSocket _webSocket = new();
     private readonly ArraySegment<byte> _buffer = new(new byte[2048]);
 
-    protected WebSocketConnection(string connectionStr, ILogger logger)
+    protected WebSocketConnection(string connectionStr, ILogger? logger)
     {
         _connectionStr = connectionStr ?? throw new ArgumentNullException(nameof(connectionStr));
-        Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        Logger = logger ?? new NullLogger();
     }
 
     protected ILogger Logger { get; }
@@ -23,14 +23,14 @@ public abstract class WebSocketConnection
 
     public async Task Connect(CancellationToken cancellationToken = default)
     {
-        Logger.LogInformation("Connecting...");
+        Logger.LogDebug("Connecting...");
 
         await _webSocket.ConnectAsync(new Uri(_connectionStr), cancellationToken).ConfigureAwait(false);
 
         Listen().Forget();
         OnConnected();
 
-        Logger.LogInformation("Connected");
+        Logger.LogDebug("Connected");
     }
 
     public Task Disconnect(CancellationToken cancellationToken = default)

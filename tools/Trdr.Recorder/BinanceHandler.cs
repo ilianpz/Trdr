@@ -1,72 +1,59 @@
 ﻿using System.CommandLine;
+using System.CommandLine.Invocation;
 using Microsoft.Extensions.Logging;
-using Trdr.Async;
 using Trdr.Connectivity.Binance;
 
 namespace Trdr.Recorder;
 
-public sealed class BinanceHandler
+internal sealed class BinanceHandler
 {
-    private readonly ILogger _logger;
-    private List<string> _streams = new();
+    private readonly ApplicationContext _context;
+    private readonly Option<string> _logOption;
 
-    public BinanceHandler(ILogger logger)
+    public BinanceHandler(ApplicationContext context, Option<string> logOption)
     {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _logOption = logOption ?? throw new ArgumentNullException(nameof(logOption));
     }
 
     internal Command GetCommand()
     {
         var binanceCmd = new Command("binance");
 
-        var streamsOption = new Option<IEnumerable<string>>("--streams") { AllowMultipleArgumentsPerToken = true };
+        var streamsOption = new Option<IEnumerable<string>>("--stream") { AllowMultipleArgumentsPerToken = true };
         binanceCmd.AddOption(streamsOption);
         binanceCmd.SetHandler(
-            channelsValue =>
+            async invocationContext =>
             {
-                _streams = channelsValue.ToList();
-            },
-            streamsOption);
+                var streams = invocationContext.ParseResult.GetValueForOption(streamsOption);
+                var token = invocationContext.GetCancellationToken();
+                _context.ReturnCode = await ReadStreams(streams!, invocationContext, token);
+            });
 
         return binanceCmd;
     }
 
-    public int? Execute()
+    private Task<int> ReadStreams(
+        IEnumerable<string> streams, InvocationContext invocationContext, CancellationToken cancellationToken)
     {
-        try
-        {
-            if (_streams.Count == 0)
-                return null;
-
-            ReadStreams();
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex}");
-            _logger.LogError(ex, "Error encountered");
-            return 1;
-        }
-    }
-
-    private void ReadStreams()
-    {
-        foreach (var stream in _streams)
-        {
-            Task.Run(async () =>
+        return BaseHandler.Handle(
+            async logger =>
             {
-                try
-                {
-                    await foreach (var message in Streams.SubscribeRaw(stream))
-                    {
-                        _logger.LogInformation("[{Stream}] {RawMessage}", stream, message);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[{Stream}] Error from stream", stream);
-                }
-            }).Forget();
-        }
+                logger.LogInformation("Connecting...");
+                var readTasks =
+                    streams!.Select(stream =>
+                        Task.Run(async () =>
+                            {
+                                await foreach (var message in Streams.SubscribeRaw(stream, cancellationToken))
+                                {
+                                    logger.LogInformation("{RawMessage}", message);
+                                }
+                            },
+                            cancellationToken));
+
+                await Task.WhenAll(readTasks);
+            },
+            invocationContext,
+            _logOption);
     }
 }

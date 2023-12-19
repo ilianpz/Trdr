@@ -1,77 +1,61 @@
 ﻿using System.CommandLine;
+using System.CommandLine.Invocation;
 using Microsoft.Extensions.Logging;
-using Trdr.Async;
 using Trdr.Connectivity.CoinJar;
 using Trdr.Connectivity.CoinJar.Phoenix;
 
 namespace Trdr.Recorder;
 
-public sealed class CoinJarHandler
+internal sealed class CoinJarHandler
 {
-    private readonly ILogger _logger;
-    private List<string> _channels = new();
+    private readonly ApplicationContext _context;
+    private readonly Option<string> _logOption;
 
-    public CoinJarHandler(ILogger logger)
+    public CoinJarHandler(ApplicationContext context, Option<string> logOption)
     {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _context = context ?? throw new ArgumentNullException(nameof(context));
+        _logOption = logOption ?? throw new ArgumentNullException(nameof(logOption));
     }
 
     internal Command GetCommand()
     {
         var coinJarCmd = new Command("coinjar");
-        var channelOption = new Option<IEnumerable<string>>("--channels") { AllowMultipleArgumentsPerToken = true };
+        var channelOption = new Option<IEnumerable<string>>("--channel") { AllowMultipleArgumentsPerToken = true };
         coinJarCmd.AddOption(channelOption);
         coinJarCmd.SetHandler(
-            (channelsValue) =>
+            async invocationContext =>
             {
-                _channels = channelsValue.ToList();
-            },
-            channelOption);
+                var channels = invocationContext.ParseResult.GetValueForOption(channelOption);
+                var token = invocationContext.GetCancellationToken();
+                _context.ReturnCode = await ReadChannels(channels!, invocationContext, token);
+            });
 
         return coinJarCmd;
     }
 
-    public async Task<int?> Execute()
+    private Task<int> ReadChannels(
+        IEnumerable<string> channels, InvocationContext invocationContext, CancellationToken cancellationToken)
     {
-        try
-        {
-            if (_channels.Count == 0)
-                return null;
-
-            _logger.LogInformation("Connecting...");
-            Connection connection = Connection.Create();
-            await connection.Connect();
-            _logger.LogInformation("Connected");
-
-            ReadChannels(connection);
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex}");
-            _logger.LogError(ex, "Error encountered");
-            return 1;
-        }
-    }
-
-    private void ReadChannels(Connection connection)
-    {
-        foreach (var channel in _channels)
-        {
-            Task.Run(async () =>
+        return BaseHandler.Handle(
+            async logger =>
             {
-                try
-                {
-                    await foreach (MessagePair pair in connection.Subscribe(channel))
+                logger.LogInformation("Connecting...");
+                Connection connection = Connection.Create();
+                await connection.Connect(cancellationToken);
+                logger.LogInformation("Connected");
+
+                var tasks = channels.Select(channel =>
+                    Task.Run(async () =>
                     {
-                        _logger.LogInformation("[{Channel}] {RawMessage}", channel, pair.RawMessage);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "[{Channel}] Error from channel", channel);
-                }
-            }).Forget();
-        }
+                        await foreach (MessagePair pair in connection.Subscribe(channel, cancellationToken))
+                        {
+                            logger.LogInformation("{RawMessage}", pair.RawMessage);
+                        }
+                    }, cancellationToken));
+
+                await Task.WhenAll(tasks);
+            },
+            invocationContext,
+            _logOption);
     }
 }
