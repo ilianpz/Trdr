@@ -1,6 +1,5 @@
-﻿// Use Run(new DebugInProcessConfig()) to debug
-
-using BenchmarkDotNet.Running;
+﻿using BenchmarkDotNet.Running;
 using Trdr.Benchmarks.Async;
 
+// Use Run(new DebugInProcessConfig()) to debug
 BenchmarkRunner.Run<AsyncMultiAutoResetEventBenchmarks>();
