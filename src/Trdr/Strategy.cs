@@ -1,4 +1,5 @@
 ﻿using Nito.AsyncEx;
+using Trdr.Reactive;
 
 namespace Trdr;
 
@@ -45,9 +46,9 @@ public abstract class Strategy
         return runTask;
     }
 
-    protected Sentinel<T> CreateSentinel<T>(IAsyncEnumerable<T> enumerable, Action<T> handler)
+    protected Sentinel<T> CreateSentinel<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler)
     {
-        return Sentinel<T>.Create(enumerable, handler, TaskScheduler);
+        return Sentinel.Create(enumerable, handler, TaskScheduler);
     }
 
     private Task RunInternal(CancellationToken cancellationToken)

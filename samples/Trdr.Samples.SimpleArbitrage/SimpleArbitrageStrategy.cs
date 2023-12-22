@@ -30,8 +30,8 @@ public sealed class SimpleArbitrageStrategy : Strategy
         // Subscribe to Binance's ticker and store its ask everytime it's updated.
         // Subscribe to CoinJar's ticker and store its bid everytime it's updated.
         var sentinel =
-            CreateSentinel(_binanceTicker, ticker => buy = ticker.Ask)
-                .Combine(_coinJarTicker, ticker => sell = ticker.Bid);
+            CreateSentinel(_binanceTicker, ticker => buy = ticker.Value.Ask)
+                .Combine(_coinJarTicker, ticker => sell = ticker.Value.Bid);
 
         sentinel.Start(); // Start the subscriptions
 

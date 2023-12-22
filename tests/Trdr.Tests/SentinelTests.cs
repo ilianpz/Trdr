@@ -10,10 +10,11 @@ public class SentinelTests
         var subject1 = new Subject<int>();
         var subject2 = new Subject<int>();
 
-        int item1 = 0;
-        int item2 = 0;
-        var @event = Sentinel<int>.Create(subject1, item => item1 = item, TaskScheduler.Default)
-            .Combine(subject2, item => item2 = item);
+        int value1 = 0;
+        int value2 = 0;
+        var @event =
+            Sentinel.Create(subject1, item => value1 = item.Value, TaskScheduler.Default)
+                .Combine(subject2, item => value2 = item.Value);
 
         @event.Start();
 
@@ -22,8 +23,8 @@ public class SentinelTests
 
         await @event.Wait();
 
-        Assert.That(item1, Is.EqualTo(1));
-        Assert.That(item2, Is.EqualTo(2));
+        Assert.That(value1, Is.EqualTo(1));
+        Assert.That(value2, Is.EqualTo(2));
     }
 
     [Test]
@@ -33,12 +34,13 @@ public class SentinelTests
         var subject2 = new Subject<int>();
         var subject3 = new Subject<int>();
 
-        int item1 = 0;
-        int item2 = 0;
-        int item3 = 0;
-        var @event = Sentinel<int>.Create(subject1, item => item1 = item, TaskScheduler.Default)
-            .Combine(subject2, item => item2 = item)
-            .Combine(subject3, item => item3 = item);
+        int value1 = 0;
+        int value2 = 0;
+        int value3 = 0;
+        var @event =
+            Sentinel.Create(subject1, item => value1 = item.Value, TaskScheduler.Default)
+                .Combine(subject2, item => value2 = item.Value)
+                .Combine(subject3, item => value3 = item.Value);
 
         @event.Start();
 
@@ -48,8 +50,8 @@ public class SentinelTests
 
         await @event.Wait();
 
-        Assert.That(item1, Is.EqualTo(1));
-        Assert.That(item2, Is.EqualTo(2));
-        Assert.That(item3, Is.EqualTo(3));
+        Assert.That(value1, Is.EqualTo(1));
+        Assert.That(value2, Is.EqualTo(2));
+        Assert.That(value3, Is.EqualTo(3));
     }
 }

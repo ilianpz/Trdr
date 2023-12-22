@@ -1,3 +1,4 @@
+using System.Reactive.Linq;
 using Nito.AsyncEx;
 using Trdr.Async;
 using Trdr.Reactive;
@@ -5,22 +6,36 @@ using TaskExtensions = Trdr.Async.TaskExtensions;
 
 namespace Trdr;
 
+public static class Sentinel
+{
+    public static Sentinel<T> Create<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
+    {
+        return Create(enumerable.ToObservable(), handler, taskScheduler);
+    }
+
+    public static Sentinel<T> Create<T>(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
+    {
+        return new Sentinel<T>(observable, handler, taskScheduler);
+    }
+}
+
 public sealed class Sentinel<T> : IDisposable
 {
-    private readonly IObservable<T> _observable;
-    private readonly AsyncProducerConsumerQueue<T> _queue = new();
+    private readonly IObservable<Timestamped<T>> _observable;
+    private readonly AsyncProducerConsumerQueue<Timestamped<T>> _queue = new();
     private readonly AsyncMultiAutoResetEvent _signal = new();
 
-    private readonly Action<T> _handler;
+    private readonly Action<Timestamped<T>> _handler;
     private readonly TaskScheduler _scheduler;
     private readonly CancellationTokenSource _disposeCts = new();
 
     private bool _started;
     private IDisposable? _subscription;
 
-    private Sentinel(IObservable<T> observable, Action<T> handler, TaskScheduler scheduler)
+    internal Sentinel(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler scheduler)
     {
-        _observable = observable ?? throw new ArgumentNullException(nameof(observable));
+        if (observable == null) throw new ArgumentNullException(nameof(observable));
+        _observable = observable.Select(Timestamped.Timestamp);
         _handler = handler ?? throw new ArgumentNullException(nameof(handler));
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
 
@@ -28,37 +43,28 @@ public sealed class Sentinel<T> : IDisposable
         TaskExtensions.Run(Publish, _scheduler).Forget();
     }
 
-    internal static Sentinel<TNew> Create<TNew>(IAsyncEnumerable<TNew> enumerable, Action<TNew> handler, TaskScheduler taskScheduler)
-    {
-        return Create(enumerable.ToObservable(), handler, taskScheduler);
-    }
-
-    internal static Sentinel<TNew> Create<TNew>(IObservable<TNew> observable, Action<TNew> handler, TaskScheduler taskScheduler)
-    {
-        return new Sentinel<TNew>(observable, handler, taskScheduler);
-    }
-
-    public Sentinel<(T, TOther)> Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<TOther> handler)
+    public Sentinel<(Timestamped<T>, TOther)> Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<Timestamped<TOther>> handler)
     {
         return Combine(enumerable.ToObservable(), handler);
     }
 
-    public Sentinel<(T, TOther)> Combine<TOther>(IObservable<TOther> observable, Action<TOther> handler)
+    public Sentinel<(Timestamped<T>, TOther)> Combine<TOther>(IObservable<TOther> observable, Action<Timestamped<TOther>> handler)
     {
         if (handler == null) throw new ArgumentNullException(nameof(handler));
 
         VerifyNotStarted();
 
-        return new Sentinel<(T, TOther)>(_observable.ZipWithLatest(observable), Handle, _scheduler);
+        return new Sentinel<(Timestamped<T>, TOther)>(_observable.ZipWithLatest(observable), Handle, _scheduler);
 
         // We need to wrap the original handler because the generic type changes
         // with the new Event instance.
-        void Handle((T, TOther) item)
+        void Handle(Timestamped<(Timestamped<T>, TOther)> wrappedItem)
         {
             var newHandler = handler;
 
+            var item = wrappedItem.Value;
             _handler(item.Item1);
-            newHandler(item.Item2);
+            newHandler(Timestamped.Create(wrappedItem.Timestamp, item.Item2));
         }
     }
 
