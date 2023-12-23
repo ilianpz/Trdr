@@ -7,7 +7,7 @@ namespace Trdr.Async;
 /// </summary>
 public sealed class AsyncMultiAutoResetEvent
 {
-    private readonly AsyncManualResetEvent _event = new();
+    private readonly AsyncManualResetEventEx _event;
 
     // Use a semaphore instead of the standard lock/monitor because
     // we may need to lock and unlock in different threads.
@@ -15,6 +15,11 @@ public sealed class AsyncMultiAutoResetEvent
 
     private long _waitingCount;
     private int _releasingLockTaken;
+
+    public AsyncMultiAutoResetEvent(bool asyncCompletion = true)
+    {
+        _event = new AsyncManualResetEventEx(asyncCompletion);
+    }
 
     public void Set()
     {
@@ -24,7 +29,7 @@ public sealed class AsyncMultiAutoResetEvent
         }
     }
 
-    public async Task WaitAsync(CancellationToken cancellationToken = default)
+    public async Task Wait(CancellationToken cancellationToken = default)
     {
         bool wasWaiting = false;
 
@@ -33,7 +38,7 @@ public sealed class AsyncMultiAutoResetEvent
             Task waitTask;
             using (await _lock.LockAsync(cancellationToken))
             {
-                waitTask = _event.WaitAsync(cancellationToken);
+                waitTask = _event.Wait(cancellationToken);
                 Interlocked.Increment(ref _waitingCount);
                 wasWaiting = true;
             }

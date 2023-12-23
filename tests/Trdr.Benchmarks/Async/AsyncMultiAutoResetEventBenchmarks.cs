@@ -18,7 +18,7 @@ public class AsyncMultiAutoResetEventBenchmarks
             .Select(_ => Task.Run(
                 () =>
                 {
-                    var task = @event.WaitAsync();
+                    var task = @event.Wait();
                     countdown.Signal();
                     return task;
                 }))

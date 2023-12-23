@@ -6,27 +6,32 @@ using TaskExtensions = Trdr.Async.TaskExtensions;
 
 namespace Trdr;
 
-public static class Sentinel
+public abstract class Sentinel
 {
-    public static Sentinel<T> Create<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
+    public static Sentinel Create<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
     {
         return Create(enumerable.ToObservable(), handler, taskScheduler);
     }
 
-    public static Sentinel<T> Create<T>(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
+    public static Sentinel Create<T>(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
     {
         return new Sentinel<T>(observable, handler, taskScheduler);
     }
+
+    public abstract Sentinel Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<Timestamped<TOther>> handler);
+
+    public abstract Sentinel Combine<TOther>(IObservable<TOther> observable, Action<Timestamped<TOther>> handler);
+
+    public abstract void Start();
+
+    public abstract Task Wait(CancellationToken cancellationToken = default);
+
+    public abstract Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default);
 }
 
-public sealed class Sentinel<T> : IDisposable
+public class Sentinel<T> : Sentinel, IDisposable
 {
     private readonly IObservable<Timestamped<T>> _observable;
-    private readonly AsyncProducerConsumerQueue<Timestamped<T>> _queue = new();
-    private readonly AsyncMultiAutoResetEvent _signal = new();
-
-    private readonly Action<Timestamped<T>> _handler;
-    private readonly TaskScheduler _scheduler;
     private readonly CancellationTokenSource _disposeCts = new();
 
     private bool _started;
@@ -36,25 +41,31 @@ public sealed class Sentinel<T> : IDisposable
     {
         if (observable == null) throw new ArgumentNullException(nameof(observable));
         _observable = observable.Select(Timestamped.Timestamp);
-        _handler = handler ?? throw new ArgumentNullException(nameof(handler));
-        _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
-
-        // We need to publish items on the given scheduler which should be the strategy's main thread.
-        TaskExtensions.Run(Publish, _scheduler).Forget();
+        ItemHandler = handler ?? throw new ArgumentNullException(nameof(handler));
+        PublishScheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
     }
 
-    public Sentinel<(Timestamped<T>, TOther)> Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<Timestamped<TOther>> handler)
+    protected AsyncProducerConsumerQueue<Timestamped<T>> ItemsQueue { get; } = new();
+
+    protected Action<Timestamped<T>> ItemHandler { get; }
+
+    protected AsyncMultiAutoResetEvent ItemReceivedEvent { get; } = new(false);
+
+    protected TaskScheduler PublishScheduler { get; }
+
+
+    public override Sentinel Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<Timestamped<TOther>> handler)
     {
         return Combine(enumerable.ToObservable(), handler);
     }
 
-    public Sentinel<(Timestamped<T>, TOther)> Combine<TOther>(IObservable<TOther> observable, Action<Timestamped<TOther>> handler)
+    public override Sentinel Combine<TOther>(IObservable<TOther> observable, Action<Timestamped<TOther>> handler)
     {
         if (handler == null) throw new ArgumentNullException(nameof(handler));
 
         VerifyNotStarted();
 
-        return new Sentinel<(Timestamped<T>, TOther)>(_observable.ZipWithLatest(observable), Handle, _scheduler);
+        return new Sentinel<(Timestamped<T>, TOther)>(_observable.ZipWithLatest(observable), Handle, PublishScheduler);
 
         // We need to wrap the original handler because the generic type changes
         // with the new Event instance.
@@ -63,20 +74,22 @@ public sealed class Sentinel<T> : IDisposable
             var newHandler = handler;
 
             var item = wrappedItem.Value;
-            _handler(item.Item1);
+            ItemHandler(item.Item1);
             newHandler(Timestamped.Create(wrappedItem.Timestamp, item.Item2));
         }
     }
 
-    public void Start()
+    public override void Start()
     {
         VerifyNotStarted();
 
-        _subscription = _observable.Subscribe(item => _queue.Enqueue(item));
+        StartConsumer();
+
+        _subscription = _observable.Subscribe(item => ItemsQueue.Enqueue(item));
         _started = true;
     }
 
-    public async Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default)
+    public override async Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default)
     {
         if (predicate == null) throw new ArgumentNullException(nameof(predicate));
 
@@ -88,9 +101,9 @@ public sealed class Sentinel<T> : IDisposable
         }
     }
 
-    public Task Wait(CancellationToken cancellationToken = default)
+    public override Task Wait(CancellationToken cancellationToken = default)
     {
-       return _signal.WaitAsync(cancellationToken);
+       return ItemReceivedEvent.Wait(cancellationToken);
     }
 
     public void Dispose()
@@ -110,18 +123,24 @@ public sealed class Sentinel<T> : IDisposable
             throw new InvalidOperationException("Already started.");
     }
 
-    private async Task Publish()
+    protected virtual void StartConsumer()
+    {
+        // We need to publish items on the given scheduler which should be the strategy's main thread.
+        TaskExtensions.Run(Publish, PublishScheduler).Forget();
+    }
+
+    protected virtual async Task Publish()
     {
         try
         {
             while (true)
             {
-                var item = await _queue.DequeueAsync(_disposeCts.Token);
+                var item = await ItemsQueue.DequeueAsync(_disposeCts.Token);
 
                 try
                 {
-                    _handler(item);
-                    _signal.Set();
+                    ItemHandler(item);
+                    ItemReceivedEvent.Set();
                 }
                 catch { /* NOP */ }
             }

@@ -13,7 +13,7 @@ public sealed class AsyncMultiAutoResetEventTests
     {
         var @event = new AsyncMultiAutoResetEvent();
         @event.Set();
-        return @event.WaitAsync();
+        return @event.Wait();
     }
 
     [Test]
@@ -21,12 +21,12 @@ public sealed class AsyncMultiAutoResetEventTests
     {
         var @event = new AsyncMultiAutoResetEvent();
         @event.Set();
-        await @event.WaitAsync();
+        await @event.Wait();
 
         var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromSeconds(1));
         Assert.That(
-            () => @event.WaitAsync(cts.Token),
+            () => @event.Wait(cts.Token),
             Throws.InstanceOf<OperationCanceledException>());
     }
 
@@ -47,7 +47,7 @@ public sealed class AsyncMultiAutoResetEventTests
                 TaskExtensions.Run(
                     () =>
                     {
-                        var waitTask = @event.WaitAsync();
+                        var waitTask = @event.Wait();
                         countdown.Signal();
                         return waitTask;
                     }, scheduler))
@@ -66,7 +66,7 @@ public sealed class AsyncMultiAutoResetEventTests
         var @event = new AsyncMultiAutoResetEvent();
 
         var tasks = Enumerable.Range(1, 1000)
-            .Select(_ => Task.Run(() => @event.WaitAsync()))
+            .Select(_ => Task.Run(() => @event.Wait()))
             .ToList();
 
         @event.Set();
@@ -76,7 +76,7 @@ public sealed class AsyncMultiAutoResetEventTests
         var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromSeconds(1));
         Assert.That(
-            () => @event.WaitAsync(cts.Token),
+            () => @event.Wait(cts.Token),
             Throws.InstanceOf<OperationCanceledException>());
     }
 

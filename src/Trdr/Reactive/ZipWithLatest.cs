@@ -2,7 +2,7 @@
 
 namespace Trdr.Reactive;
 
-public static class ObservableExtensions
+public static partial class ObservableExtensions
 {
     public static IObservable<(T1, T2)> ZipWithLatest<T1, T2>(
         this IObservable<T1> observable1, IObservable<T2> observable2)
