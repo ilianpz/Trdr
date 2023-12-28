@@ -1,4 +1,5 @@
 using System.Reactive.Linq;
+using System.Runtime.ExceptionServices;
 using Nito.AsyncEx;
 using Trdr.Async;
 using Trdr.Reactive;
@@ -8,12 +9,14 @@ namespace Trdr;
 
 public abstract class Sentinel
 {
-    public static Sentinel Create<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
+    public static Sentinel Create<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler,
+        TaskScheduler? taskScheduler = null)
     {
         return Create(enumerable.ToObservable(), handler, taskScheduler);
     }
 
-    public static Sentinel Create<T>(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler taskScheduler)
+    public static Sentinel Create<T>(IObservable<T> observable, Action<Timestamped<T>> handler,
+        TaskScheduler? taskScheduler = null)
     {
         return new Sentinel<T>(observable, handler, taskScheduler);
     }
@@ -24,8 +27,6 @@ public abstract class Sentinel
 
     public abstract void Start();
 
-    public abstract Task Wait(CancellationToken cancellationToken = default);
-
     public abstract Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default);
 }
 
@@ -33,26 +34,25 @@ public class Sentinel<T> : Sentinel, IDisposable
 {
     private readonly IObservable<Timestamped<T>> _observable;
     private readonly CancellationTokenSource _disposeCts = new();
+    private readonly Queue<Timestamped<T>> _items = new();
+    private readonly AsyncMultiAutoResetEvent _publishedEvent = new();
+    private readonly AsyncAutoResetEvent _itemsReceivedEvent = new();
 
+    private Exception? _itemHandlerException;
     private bool _started;
     private IDisposable? _subscription;
 
-    internal Sentinel(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler scheduler)
+    internal Sentinel(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler? scheduler)
     {
         if (observable == null) throw new ArgumentNullException(nameof(observable));
         _observable = observable.Select(Timestamped.Timestamp);
         ItemHandler = handler ?? throw new ArgumentNullException(nameof(handler));
-        PublishScheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+        PublishScheduler = scheduler ?? TaskScheduler.Default;
     }
-
-    protected AsyncProducerConsumerQueue<Timestamped<T>> ItemsQueue { get; } = new();
 
     protected Action<Timestamped<T>> ItemHandler { get; }
 
-    protected AsyncMultiAutoResetEvent ItemReceivedEvent { get; } = new(false);
-
     protected TaskScheduler PublishScheduler { get; }
-
 
     public override Sentinel Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<Timestamped<TOther>> handler)
     {
@@ -68,7 +68,7 @@ public class Sentinel<T> : Sentinel, IDisposable
         return new Sentinel<(Timestamped<T>, TOther)>(_observable.ZipWithLatest(observable), Handle, PublishScheduler);
 
         // We need to wrap the original handler because the generic type changes
-        // with the new Event instance.
+        // with the new Sentinel instance.
         void Handle(Timestamped<(Timestamped<T>, TOther)> wrappedItem)
         {
             var newHandler = handler;
@@ -85,7 +85,12 @@ public class Sentinel<T> : Sentinel, IDisposable
 
         StartConsumer();
 
-        _subscription = _observable.Subscribe(item => ItemsQueue.Enqueue(item));
+        _subscription = _observable.Subscribe(
+            item =>
+            {
+                _items.Enqueue(item);
+                _itemsReceivedEvent.Set();
+            });
         _started = true;
     }
 
@@ -95,15 +100,15 @@ public class Sentinel<T> : Sentinel, IDisposable
 
         while (true)
         {
-            await Wait(cancellationToken);
+            await _publishedEvent.Wait(cancellationToken);
+
+            // Bubble the exception we encountered when publishing items.
+            if (_itemHandlerException != null)
+                ExceptionDispatchInfo.Capture(_itemHandlerException).Throw();
+
             if (predicate())
                 return;
         }
-    }
-
-    public override Task Wait(CancellationToken cancellationToken = default)
-    {
-       return ItemReceivedEvent.Wait(cancellationToken);
     }
 
     public void Dispose()
@@ -129,20 +134,39 @@ public class Sentinel<T> : Sentinel, IDisposable
         TaskExtensions.Run(Publish, PublishScheduler).Forget();
     }
 
-    protected virtual async Task Publish()
+    protected virtual void OnHandleItem(Timestamped<T> item)
+    {
+        ItemHandler(item);
+    }
+
+    private async Task Publish()
     {
         try
         {
             while (true)
             {
-                var item = await ItemsQueue.DequeueAsync(_disposeCts.Token);
+                await _itemsReceivedEvent.WaitAsync(_disposeCts.Token);
 
-                try
+                // Drain the queue in one go and only signal any awaiting watchers after publishing all.
+                bool hasPublished = false;
+                while (_items.Count > 0)
                 {
-                    ItemHandler(item);
-                    ItemReceivedEvent.Set();
+                    try
+                    {
+                        var item = _items.Dequeue();
+                        OnHandleItem(item);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Grab the first exception we encounter
+                        _itemHandlerException ??= ex;
+                    }
+
+                    hasPublished = true;
                 }
-                catch { /* NOP */ }
+
+                if (hasPublished)
+                    _publishedEvent.Set();
             }
         }
         catch (OperationCanceledException) { }
