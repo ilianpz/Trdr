@@ -7,12 +7,21 @@ namespace Trdr.Benchmarks.Async;
 public class AsyncMultiAutoResetEventBenchmarks
 {
     [Benchmark]
+    public Task Release_one()
+    {
+        var @event = new AsyncMultiAutoResetEvent();
+        var task = Task.Run(() => @event.Wait());
+        @event.Set();
+
+        return task;
+    }
+
+    [Benchmark]
     public async Task Release_multiple_awaiters()
     {
         var @event = new AsyncMultiAutoResetEvent();
 
         const int tasksCount = 10000;
-
         var countdown = new AsyncCountdownEvent(tasksCount);
         var tasks = Enumerable.Range(1, tasksCount)
             .Select(_ => Task.Run(

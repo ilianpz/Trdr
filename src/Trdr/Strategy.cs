@@ -1,11 +1,9 @@
 ﻿using Nito.AsyncEx;
 
-
 namespace Trdr;
 
 /// <summary>
-/// Defines the base class for all strategies. The strategy will run on a single main thread just
-/// like UI applications.
+/// Defines the base class for all strategies.
 /// </summary>
 public abstract class Strategy
 {
@@ -46,9 +44,20 @@ public abstract class Strategy
         return runTask;
     }
 
-    protected Sentinel CreateSentinel<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler)
+    protected Sentinel<T> Subscribe<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler)
     {
-        return Sentinel.Create(enumerable, handler, TaskScheduler);
+        if (enumerable == null) throw new ArgumentNullException(nameof(enumerable));
+        return Subscribe(enumerable.ToObservable(), handler);
+    }
+
+    protected Sentinel<T> Subscribe<T>(IObservable<T> observable, Action<Timestamped<T>> handler)
+    {
+        if (observable == null) throw new ArgumentNullException(nameof(observable));
+        if (handler == null) throw new ArgumentNullException(nameof(handler));
+
+        var sentinel = new Sentinel<T>(observable, handler, TaskScheduler);
+        sentinel.Start();
+        return sentinel;
     }
 
     private Task RunInternal(CancellationToken cancellationToken)

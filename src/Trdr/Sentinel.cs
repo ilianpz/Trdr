@@ -1,174 +1,162 @@
-using System.Reactive.Linq;
-using System.Runtime.ExceptionServices;
 using Nito.AsyncEx;
 using Trdr.Async;
-using Trdr.Reactive;
-using TaskExtensions = Trdr.Async.TaskExtensions;
 
 namespace Trdr;
 
-public abstract class Sentinel
+public static class Sentinel
 {
-    public static Sentinel Create<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler,
+    public static Sentinel<T> Create<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler,
         TaskScheduler? taskScheduler = null)
     {
         return Create(enumerable.ToObservable(), handler, taskScheduler);
     }
 
-    public static Sentinel Create<T>(IObservable<T> observable, Action<Timestamped<T>> handler,
+    public static Sentinel<T> Create<T>(IObservable<T> observable, Action<Timestamped<T>> handler,
         TaskScheduler? taskScheduler = null)
     {
         return new Sentinel<T>(observable, handler, taskScheduler);
     }
-
-    public abstract Sentinel Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<Timestamped<TOther>> handler);
-
-    public abstract Sentinel Combine<TOther>(IObservable<TOther> observable, Action<Timestamped<TOther>> handler);
-
-    public abstract void Start();
-
-    public abstract Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default);
 }
 
-public class Sentinel<T> : Sentinel, IDisposable
+public sealed class Sentinel<T> : IDisposable
 {
-    private readonly IObservable<Timestamped<T>> _observable;
-    private readonly CancellationTokenSource _disposeCts = new();
-    private readonly Queue<Timestamped<T>> _items = new();
-    private readonly AsyncMultiAutoResetEvent _publishedEvent = new();
-    private readonly AsyncAutoResetEvent _itemsReceivedEvent = new();
+    private readonly IObservable<T> _observable;
+    private readonly Action<Timestamped<T>> _handler;
+    private readonly TaskScheduler _taskScheduler;
+    private readonly TaskCompletionSource _completionTcs = new();
 
-    private Exception? _itemHandlerException;
-    private bool _started;
-    private IDisposable? _subscription;
+    private readonly Queue<T> _queue = new();
+    private readonly AsyncAutoResetEvent _receivedItemsEvent = new();
+    private readonly AsyncMultiAutoResetEvent _handledItemsEvent = new(false);
 
-    internal Sentinel(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler? scheduler)
+    private List<PredicateHolder> _predicates = new();
+    private CancellationTokenSource? _disposeCts = new();
+    private IDisposable? _baseSubscription;
+
+    public Sentinel(IObservable<T> observable, Action<Timestamped<T>> handler, TaskScheduler? taskScheduler)
     {
-        if (observable == null) throw new ArgumentNullException(nameof(observable));
-        _observable = observable.Select(Timestamped.Timestamp);
-        ItemHandler = handler ?? throw new ArgumentNullException(nameof(handler));
-        PublishScheduler = scheduler ?? TaskScheduler.Default;
+        _observable = observable ?? throw new ArgumentNullException(nameof(observable));
+        _handler = handler ?? throw new ArgumentNullException(nameof(handler));
+        _taskScheduler = taskScheduler ?? TaskScheduler.Default;
     }
 
-    protected Action<Timestamped<T>> ItemHandler { get; }
-
-    protected TaskScheduler PublishScheduler { get; }
-
-    public override Sentinel Combine<TOther>(IAsyncEnumerable<TOther> enumerable, Action<Timestamped<TOther>> handler)
+    public void Start()
     {
-        return Combine(enumerable.ToObservable(), handler);
-    }
+        TaskEx.Run(HandleItems, _taskScheduler).Forget();
 
-    public override Sentinel Combine<TOther>(IObservable<TOther> observable, Action<Timestamped<TOther>> handler)
-    {
-        if (handler == null) throw new ArgumentNullException(nameof(handler));
-
-        VerifyNotStarted();
-
-        return new Sentinel<(Timestamped<T>, TOther)>(_observable.ZipWithLatest(observable), Handle, PublishScheduler);
-
-        // We need to wrap the original handler because the generic type changes
-        // with the new Sentinel instance.
-        void Handle(Timestamped<(Timestamped<T>, TOther)> wrappedItem)
-        {
-            var newHandler = handler;
-
-            var item = wrappedItem.Value;
-            ItemHandler(item.Item1);
-            newHandler(Timestamped.Create(wrappedItem.Timestamp, item.Item2));
-        }
-    }
-
-    public override void Start()
-    {
-        VerifyNotStarted();
-
-        StartConsumer();
-
-        _subscription = _observable.Subscribe(
-            item =>
+        _baseSubscription = _observable.Subscribe(
+            onNext: item =>
             {
-                _items.Enqueue(item);
-                _itemsReceivedEvent.Set();
-            });
-        _started = true;
-    }
-
-    public override async Task Watch(Func<bool> predicate, CancellationToken cancellationToken = default)
-    {
-        if (predicate == null) throw new ArgumentNullException(nameof(predicate));
-
-        while (true)
-        {
-            await _publishedEvent.Wait(cancellationToken);
-
-            // Bubble the exception we encountered when publishing items.
-            if (_itemHandlerException != null)
-                ExceptionDispatchInfo.Capture(_itemHandlerException).Throw();
-
-            if (predicate())
-                return;
-        }
+                _queue.Enqueue(item);
+                _receivedItemsEvent.Set();
+            },
+            onError: ex => _completionTcs.TrySetException(ex),
+            onCompleted: () => _completionTcs.TrySetResult());
     }
 
     public void Dispose()
     {
-        if (_subscription == null) return;
+        if (_disposeCts != null)
+        {
+            _disposeCts.Cancel();
+            _disposeCts = null;
+        }
 
-        _subscription.Dispose();
-        _subscription = null;
-
-        _disposeCts.Cancel();
-        _disposeCts.Dispose();
+        _baseSubscription?.Dispose();
     }
 
-    private void VerifyNotStarted()
+    public async Task<bool> Watch(Func<bool> predicate, CancellationToken cancellationToken = default)
     {
-        if (_started)
-            throw new InvalidOperationException("Already started.");
+        if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+
+        await _handledItemsEvent.Wait(cancellationToken);
+
+        var completionTask = _completionTcs.Task;
+        if (completionTask.IsCompleted)
+            return await HandleCompletedSubscription();
+
+        if (predicate())
+            return true;
+
+        var tcs = new TaskCompletionSource();
+        _predicates.Add(new PredicateHolder { Predicate = predicate, Tcs = tcs });
+
+        // Check which task finished first
+        var predicateTask = tcs.Task;
+        var firstTask = await Task.WhenAny(completionTask, predicateTask);
+        if (firstTask == completionTask)
+            return await HandleCompletedSubscription();
+
+        return true;
+
+        async Task<bool> HandleCompletedSubscription()
+        {
+            // This will only complete if _observable has an error or has ended.
+            // In case of error, throw here...
+            await completionTask;
+            // In case _observable ended, end here and indicate that the subscription has finished.
+            return false;
+        }
     }
 
-    protected virtual void StartConsumer()
+    private async Task HandleItems()
     {
-        // We need to publish items on the given scheduler which should be the strategy's main thread.
-        TaskExtensions.Run(Publish, PublishScheduler).Forget();
-    }
+        var cancellationToken = _disposeCts!.Token;
 
-    protected virtual void OnHandleItem(Timestamped<T> item)
-    {
-        ItemHandler(item);
-    }
-
-    private async Task Publish()
-    {
         try
         {
             while (true)
             {
-                await _itemsReceivedEvent.WaitAsync(_disposeCts.Token);
+                await _receivedItemsEvent.WaitAsync(cancellationToken);
 
-                // Drain the queue in one go and only signal any awaiting watchers after publishing all.
-                bool hasPublished = false;
-                while (_items.Count > 0)
+                bool hasHandled = false;
+                while (_queue.Count > 0)
                 {
-                    try
-                    {
-                        var item = _items.Dequeue();
-                        OnHandleItem(item);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Grab the first exception we encounter
-                        _itemHandlerException ??= ex;
-                    }
-
-                    hasPublished = true;
+                    var item = _queue.Dequeue();
+                    _handler(Timestamped.Create(DateTime.UtcNow, item));
+                    hasHandled = true;
                 }
 
-                if (hasPublished)
-                    _publishedEvent.Set();
+                if (!hasHandled)
+                    continue;
+
+                var pendingPredicates = new List<PredicateHolder>();
+                foreach (var predicateHolder in _predicates)
+                {
+                    if (predicateHolder.Predicate())
+                    {
+                        predicateHolder.Tcs.TrySetResult();
+                        continue;
+                    }
+
+                    // This predicate is not true yet. Just re-add it to our list of predicates.
+                    pendingPredicates.Add(predicateHolder);
+                }
+
+                _predicates = pendingPredicates;
+
+                _handledItemsEvent.Set();
+                await Task.Yield(); // Allow any completed watchers to continue first
             }
         }
-        catch (OperationCanceledException) { }
+        catch (OperationCanceledException ex) when (ex.CancellationToken == cancellationToken)
+        {
+            _completionTcs.TrySetResult(); // End
+        }
+        catch (Exception ex)
+        {
+            _completionTcs.TrySetException(ex);
+        }
+        finally
+        {
+            _handledItemsEvent.Set();
+            await Task.Yield(); // Allow any completed watchers to continue first
+        }
+    }
+
+    private record struct PredicateHolder
+    {
+        public required Func<bool> Predicate { get; init; }
+        public required TaskCompletionSource Tcs { get; init; }
     }
 }

@@ -1,7 +1,6 @@
 ﻿using System.Collections;
 using Nito.AsyncEx;
 using Trdr.Async;
-using TaskExtensions = Trdr.Async.TaskExtensions;
 
 namespace Trdr.Tests.Async;
 
@@ -17,6 +16,7 @@ public sealed class AsyncMultiAutoResetEventTests
     }
 
     [Test]
+    [Timeout(5000)]
     public async Task Set_resets_after_await()
     {
         var @event = new AsyncMultiAutoResetEvent();
@@ -44,7 +44,7 @@ public sealed class AsyncMultiAutoResetEventTests
         var countdown = new AsyncCountdownEvent(tasksCount);
         var tasks = Enumerable.Range(1, tasksCount)
             .Select(_ =>
-                TaskExtensions.Run(
+                TaskEx.Run(
                     () =>
                     {
                         var waitTask = @event.Wait();
@@ -65,14 +65,25 @@ public sealed class AsyncMultiAutoResetEventTests
     {
         var @event = new AsyncMultiAutoResetEvent();
 
-        var tasks = Enumerable.Range(1, 1000)
-            .Select(_ => Task.Run(() => @event.Wait()))
+        const int count = 1000;
+
+        var countdown = new AsyncCountdownEvent(count);
+        var tasks = Enumerable.Range(1, count)
+            .Select(_ => Task.Run(
+                () =>
+                {
+                    var waitTask = @event.Wait();
+                    countdown.Signal();
+                    return waitTask;
+                }))
             .ToList();
 
+        await countdown.WaitAsync();
         @event.Set();
 
         await Task.WhenAll(tasks);
 
+        // Check that the event has reset
         var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromSeconds(1));
         Assert.That(

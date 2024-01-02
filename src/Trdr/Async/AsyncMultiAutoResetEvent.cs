@@ -7,93 +7,54 @@ namespace Trdr.Async;
 /// </summary>
 public sealed class AsyncMultiAutoResetEvent
 {
-    private readonly AsyncManualResetEventEx _event;
-
-    // Use a semaphore instead of the standard lock/monitor because
-    // we may need to lock and unlock in different threads.
-    private readonly SemaphoreSlim _lock = new(1, 1);
-
-    private long _waitingCount;
-    private int _releasingLockTaken;
+    private readonly bool _asyncCompletion;
+    private readonly object _mutex = new();
+    private List<TaskCompletionSource> _tcsList = new();
+    private bool isSet;
 
     public AsyncMultiAutoResetEvent(bool asyncCompletion = true)
     {
-        _event = new AsyncManualResetEventEx(asyncCompletion);
+        _asyncCompletion = asyncCompletion;
     }
 
     public void Set()
     {
-        using (_lock.Lock())
+        List<TaskCompletionSource> tcsList;
+        lock (_mutex)
         {
-            _event.Set();
+            tcsList = _tcsList;
+            _tcsList = new();
+
+            // If there are no awaiters, we have to leave this event as set.
+            isSet = tcsList.Count == 0;
+        }
+
+        // We complete the awaiting tasks outside the lock in case the user wants
+        // synchronous completion. Otherwise, we might block the thread.
+        foreach (var tcs in tcsList)
+        {
+            tcs.TrySetResult();
         }
     }
 
     public async Task Wait(CancellationToken cancellationToken = default)
     {
-        bool wasWaiting = false;
-
-        try
+        var tcs = new TaskCompletionSource(_asyncCompletion ? TaskCreationOptions.RunContinuationsAsynchronously : 0);
+        lock (_mutex)
         {
-            Task waitTask;
-            using (await _lock.LockAsync(cancellationToken))
+            if (isSet)
             {
-                waitTask = _event.Wait(cancellationToken);
-
-                // Count the number of awaiters. We will only reset this event
-                // when all awaiters have been signalled.
-                Interlocked.Increment(ref _waitingCount);
-                wasWaiting = true;
+                // This is the first awaiter for an already set event. Just return early and reset the event.
+                isSet = false;
+                return;
             }
 
-            await waitTask.ConfigureAwait(false);
+            _tcsList.Add(tcs);
         }
-        finally
+
+        await using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)).ConfigureAwait(false))
         {
-            // Only release if we were able to wait because
-            // LockAsync can throw before waiting.
-            if (wasWaiting)
-                await ReleaseAllWaiting().ConfigureAwait(false);
-        }
-    }
-
-    private async Task ReleaseAllWaiting()
-    {
-        bool lockTaken = false;
-        try
-        {
-            // Safely check if this is the first awaiter that is to be released
-            if (Interlocked.CompareExchange(ref _releasingLockTaken, 1, 0) == 0)
-            {
-                // If this is the first awaiter, lock so that any concurrent calls to Set or Wait is blocked.
-                Task waitTask = _lock.WaitAsync();
-
-                // Only mark that the lock was taken if we are certain that the WaitAsync call above
-                // was successful.
-                lockTaken = true;
-
-                await waitTask.ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            Interlocked.Decrement(ref _waitingCount);
-
-            if (lockTaken)
-            {
-                // If the lock was taken by this awaiter, then it is responsible for releasing the lock.
-
-                // Spin until we know that all awaiters have been released.
-                while (Interlocked.Read(ref _waitingCount) != 0)
-                {
-                    await Task.Yield();
-                }
-
-                // Reset our state
-                _event.Reset();
-                Interlocked.CompareExchange(ref _releasingLockTaken, 0, 1);
-                _lock.Release();
-            }
+            await tcs.Task.ConfigureAwait(false);
         }
     }
 }

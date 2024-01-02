@@ -1,5 +1,6 @@
 ﻿using Trdr.Connectivity.Binance;
 using Trdr.Connectivity.CoinJar.Phoenix;
+using Trdr.Reactive;
 
 namespace Trdr.Samples.SimpleArbitrage;
 
@@ -29,11 +30,14 @@ public sealed class SimpleArbitrageStrategy : Strategy
 
         // Subscribe to Binance's ticker and store its ask everytime it's updated.
         // Subscribe to CoinJar's ticker and store its bid everytime it's updated.
-        var sentinel =
-            CreateSentinel(_binanceTicker, ticker => buy = ticker.Value.Ask)
-                .Combine(_coinJarTicker, ticker => sell = ticker.Value.Bid);
-
-        sentinel.Start(); // Start the subscriptions
+        using var subscription = Subscribe(
+            _binanceTicker.ToObservable()
+                .ZipWithLatest(_coinJarTicker.ToObservable()),
+            item =>
+            {
+                buy = item.Value.Item1.Ask;
+                sell = item.Value.Item2.Bid;
+            });
 
         // This simple strategy waits for an arbitrage opportunity by buying low at Binance
         // and selling high at CoinJar.
@@ -41,16 +45,11 @@ public sealed class SimpleArbitrageStrategy : Strategy
         // Note: this is a toy trading strategy that will not work in the real world.
         // It also ignores transaction fees and bid/ask quantities.
         // This only serves to illustrate how the framework is meant to be used.
-
-        do
+        while (await subscription.Watch(() => sell - buy > 0.002m, cancellationToken))
         {
-            await sentinel.Watch(() => sell - buy > 0.002m, cancellationToken);
-
             // Buy at Binance then sell at CoinJar
             _buyAtBinance(buy);
             _sellAtCoinJar(sell);
-        } while (true);
-
-        // ReSharper disable once FunctionNeverReturns
+        }
     }
 }
