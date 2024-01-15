@@ -11,8 +11,8 @@ var coinJarTicker = coinJar.SubscribeTicker(symbol);
 var binanceTicker = Binance.GetTicker(symbol);
 
 var strategy = new SimpleArbitrageStrategy(
-    coinJarTicker.ToAsyncEnumerable(),
-    binanceTicker.ToAsyncEnumerable(),
+    coinJarTicker,
+    binanceTicker,
     buy => Console.WriteLine($"Buy at Binance @ {buy}"),
     sell => Console.WriteLine($"Sell at CoinJar @ {sell}"));
 var runTask = await strategy.Start();

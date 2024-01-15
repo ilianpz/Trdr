@@ -1,4 +1,6 @@
-﻿using Nito.AsyncEx;
+﻿using System.Reactive.Concurrency;
+using System.Reactive.Linq;
+using Nito.AsyncEx;
 
 namespace Trdr;
 
@@ -44,20 +46,21 @@ public abstract class Strategy
         return runTask;
     }
 
-    protected Sentinel<T> Subscribe<T>(IAsyncEnumerable<T> enumerable, Action<Timestamped<T>> handler)
+    protected Task Subscribe<T>(IObservable<T> stream, Action<T> handleItem, CancellationToken cancellationToken)
     {
-        if (enumerable == null) throw new ArgumentNullException(nameof(enumerable));
-        return Subscribe(enumerable.ToObservable(), handler);
-    }
+        if (stream == null) throw new ArgumentNullException(nameof(stream));
+        if (handleItem == null) throw new ArgumentNullException(nameof(handleItem));
 
-    protected Sentinel<T> Subscribe<T>(IObservable<T> observable, Action<Timestamped<T>> handler)
-    {
-        if (observable == null) throw new ArgumentNullException(nameof(observable));
-        if (handler == null) throw new ArgumentNullException(nameof(handler));
+        var tcs = new TaskCompletionSource();
+        stream
+            .ObserveOn(new SynchronizationContextScheduler(SynchronizationContext.Current!))
+            .Subscribe(
+                handleItem,
+                onError: ex => tcs.TrySetException(ex),
+                onCompleted: () => tcs.TrySetResult());
 
-        var sentinel = new Sentinel<T>(observable, handler, TaskScheduler);
-        sentinel.Start();
-        return sentinel;
+        using var cancellation = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
+        return tcs.Task;
     }
 
     private Task RunInternal(CancellationToken cancellationToken)

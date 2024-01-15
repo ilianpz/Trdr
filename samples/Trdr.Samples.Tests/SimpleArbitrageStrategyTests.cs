@@ -10,21 +10,22 @@ namespace Trdr.Samples.Tests;
 public class SimpleArbitrageStrategyTests
 {
     [Test]
+    [Repeat(100)]
     public async Task Can_buy_and_sell()
     {
         // Mock a source of ticker events.
         var binanceSubject = new Subject<Ticker>();
         var coinJarSubject = new Subject<TickerPayload>();
 
-        // Synchronize so we can test the scenario reliably.
-        var countdown = new AsyncCountdownEvent(2);
+        // Count events so we can test the scenario reliably.
+        var countdown = new AsyncCountdownEvent(4);
 
         int buyAtBinance = 0;
         int sellAtCoinJar = 0;
 
         var strategy = new SimpleArbitrageStrategy(
-            coinJarSubject.ToAsyncEnumerable(),
-            binanceSubject.ToAsyncEnumerable(),
+            coinJarSubject,
+            binanceSubject,
             _ =>
             {
                 ++buyAtBinance;
@@ -41,10 +42,6 @@ public class SimpleArbitrageStrategyTests
         // Generate events that will trigger a buy and sell.
         binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
         coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" });
-
-        // Wait for the strategy to process the events
-        await countdown.WaitAsync();
-        countdown.AddCount(2);
 
         // Generate events that will NOT trigger a buy and sell.
         binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
