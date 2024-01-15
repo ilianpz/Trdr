@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
-using System.Runtime.CompilerServices;
+using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Text.Json;
 
 namespace Trdr.Connectivity.Binance;
@@ -11,30 +12,51 @@ namespace Trdr.Connectivity.Binance;
 /// </summary>
 public static class Streams
 {
-    public static async IAsyncEnumerable<Ticker> SubscribeTicker(
-        string symbol,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public static IObservable<Ticker> GetTicker(string symbol)
     {
         if (symbol == null) throw new ArgumentNullException(nameof(symbol));
-        await foreach (string message in SubscribeRaw(GetStreamName(symbol, "bookTicker"), cancellationToken))
-        {
-            yield return JsonSerializer.Deserialize<Ticker>(message)!;
-        }
+
+        return GetStream(GetStreamName(symbol, "bookTicker"))
+            .Select(message => JsonSerializer.Deserialize<Ticker>(message)!);
     }
 
-    public static async IAsyncEnumerable<string> SubscribeRaw(
-        string streamName,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public static IObservable<string> GetStream(string streamName)
     {
         if (streamName == null) throw new ArgumentNullException(nameof(streamName));
 
-        var connection = Connection.Create(streamName);
-        await connection.Connect(cancellationToken).ConfigureAwait(false);
+        return Observable.Create<string>(
+            async observer =>
+            {
+                var cts = new CancellationTokenSource();
+                Connection? connection = null;
 
-        await foreach (string message in connection.ReceiveMessages(cancellationToken))
-        {
-            yield return message;
-        }
+                try
+                {
+                    connection = Connection.Create(streamName);
+                    await connection.Connect(cts.Token).ConfigureAwait(false);
+
+                    while (true)
+                    {
+                        var message = await connection.GetNextMessage(cts.Token).ConfigureAwait(false);
+                        observer.OnNext(message);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (cts.IsCancellationRequested)
+                        observer.OnCompleted();
+                    else
+                        observer.OnError(ex);
+                }
+
+                return Disposable.Create(
+                    (cts, connection),
+                    state =>
+                    {
+                        state.cts.Cancel();
+                        state.connection?.Disconnect(CancellationToken.None);
+                    });
+            });
     }
 
     private static string GetStreamName(string symbol, string stream)

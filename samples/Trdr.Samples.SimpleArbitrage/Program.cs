@@ -8,11 +8,11 @@ await coinJar.Connect();
 const string symbol = "XRPUSDT";
 
 var coinJarTicker = coinJar.SubscribeTicker(symbol);
-var binanceTicker = Binance.SubscribeTicker(symbol);
+var binanceTicker = Binance.GetTicker(symbol);
 
 var strategy = new SimpleArbitrageStrategy(
-    coinJarTicker,
-    binanceTicker,
+    coinJarTicker.ToAsyncEnumerable(),
+    binanceTicker.ToAsyncEnumerable(),
     buy => Console.WriteLine($"Buy at Binance @ {buy}"),
     sell => Console.WriteLine($"Sell at CoinJar @ {sell}"));
 var runTask = await strategy.Start();

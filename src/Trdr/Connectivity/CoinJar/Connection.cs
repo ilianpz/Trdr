@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
@@ -41,58 +42,71 @@ public sealed class Connection : WebSocketConnection
         return new Connection("wss://feed.exchange.coinjar-sandbox.com/socket/websocket");
     }
 
-    public IAsyncEnumerable<MessagePair> Subscribe(string channel)
+    public IObservable<MessagePair> GetChannel(string channel)
     {
-        return Subscribe(channel, CancellationToken.None);
-    }
+        if (channel == null) throw new ArgumentNullException(nameof(channel));
 
-    public async IAsyncEnumerable<MessagePair> Subscribe(
-        string channel,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        var request = CreateJoinRequest(channel);
-
-        var receiver = new AsyncProducerConsumerQueue<MessagePair>();
-        lock (_topicToReceiver)
-        {
-            _topicToReceiver[channel] = receiver;
-        }
-
-        await WebSocket.SendString(request).ConfigureAwait(false);
-
-        while (true)
-        {
-            var messagePair = await receiver.DequeueAsync(cancellationToken);
-            if (messagePair.Message is MessageWithPayload<ReplyPayload> replyMessage)
+        return Observable.Create<MessagePair>(
+            async observer =>
             {
-                if (replyMessage.Payload.Status != "ok")
-                    throw new InvalidOperationException("Received error response");
-            }
+                var cts = new CancellationTokenSource();
 
-            yield return messagePair;
-        }
+                try
+                {
+                    var request = CreateJoinRequest(channel);
+
+                    var receiver = new AsyncProducerConsumerQueue<MessagePair>();
+                    lock (_topicToReceiver)
+                    {
+                        _topicToReceiver[channel] = receiver;
+                    }
+
+                    await WebSocket.SendString(request, cts.Token).ConfigureAwait(false);
+
+                    while (true)
+                    {
+                        var messagePair = await receiver.DequeueAsync(cts.Token).ConfigureAwait(false);
+                        if (messagePair.Message is MessageWithPayload<ReplyPayload> replyMessage)
+                        {
+                            if (replyMessage.Payload.Status != "ok")
+                                throw new InvalidOperationException("Received error response");
+                        }
+
+                        observer.OnNext(messagePair);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (cts.IsCancellationRequested)
+                        observer.OnCompleted();
+                    else
+                        observer.OnError(ex);
+                }
+
+                return Disposable.Create(cts, theCts => theCts.Cancel());
+            });
     }
 
-    public IAsyncEnumerable<TickerPayload> SubscribeTicker(string symbol)
+    public IObservable<TickerPayload> SubscribeTicker(string symbol)
     {
         return SubscribeTickerRaw(symbol)
             .Select(messagePair => ((MessageWithPayload<TickerPayload>)messagePair.Message).Payload);
     }
 
-    public IAsyncEnumerable<MessagePair> SubscribeTickerRaw(string pair)
+    public IObservable<MessagePair> SubscribeTickerRaw(string pair)
     {
         if (pair == null) throw new ArgumentNullException(nameof(pair));
 
         string topic = $"{TopicType.Ticker}:{pair}";
-        return Subscribe(topic);
+        return GetChannel(topic);
     }
 
-    public IAsyncEnumerable<MessagePair> SubscribeTradesRaw(string pair)
+    public IObservable<MessagePair> SubscribeTradesRaw(string pair)
     {
         if (pair == null) throw new ArgumentNullException(nameof(pair));
 
         string topic = $"{TopicType.Trades}:{pair}";
-        return Subscribe(topic);
+        return GetChannel(topic);
     }
 
     protected override void OnConnected()

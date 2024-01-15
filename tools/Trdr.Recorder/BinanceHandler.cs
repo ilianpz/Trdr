@@ -41,10 +41,12 @@ internal sealed class BinanceHandler
             {
                 logger.LogInformation("Connecting...");
                 var readTasks =
-                    streams!.Select(stream =>
+                    streams.Select(stream =>
                         Task.Run(async () =>
                             {
-                                await foreach (var message in Streams.SubscribeRaw(stream, cancellationToken))
+                                await foreach (var message in
+                                               Streams.GetStream(stream).ToAsyncEnumerable()
+                                                   .WithCancellation(cancellationToken))
                                 {
                                     logger.LogInformation("{RawMessage}", message);
                                 }

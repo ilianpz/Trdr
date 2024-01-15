@@ -1,5 +1,6 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Reactive.Linq;
 using Nito.AsyncEx;
+using Nito.Disposables;
 
 namespace Trdr.Connectivity.Binance;
 
@@ -18,15 +19,38 @@ public sealed class Connection : WebSocketConnection
         return new Connection($"wss://stream.binance.com:443/ws/{streamName}");
     }
 
-    public async IAsyncEnumerable<string> ReceiveMessages(
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    public Task<string> GetNextMessage(CancellationToken cancellationToken = default)
     {
-        while (true)
-        {
-            string message = await _receiver.DequeueAsync(cancellationToken).ConfigureAwait(false);
-            yield return message;
-        }
-        // ReSharper disable once IteratorNeverReturns
+        return _receiver.DequeueAsync(cancellationToken);
+    }
+
+    public IObservable<string> GetMessages()
+    {
+        return Observable.Create<string>(
+            async observer =>
+            {
+                var cts = new CancellationTokenSource();
+
+                try
+                {
+                    string message = await _receiver.DequeueAsync(cts.Token).ConfigureAwait(false);
+                    observer.OnNext(message);
+                }
+                catch (Exception ex)
+                {
+                    if (cts.IsCancellationRequested)
+                        observer.OnCompleted();
+                    else
+                        observer.OnError(ex);
+                }
+
+                return Disposable.Create(
+                    () =>
+                    {
+                        cts.Cancel();
+                        Disconnect(CancellationToken.None);
+                    });
+            });
     }
 
     protected override Task OnMessageReceived(string msgStr)

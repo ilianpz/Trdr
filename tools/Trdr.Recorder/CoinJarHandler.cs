@@ -47,7 +47,10 @@ internal sealed class CoinJarHandler
                 var tasks = channels.Select(channel =>
                     Task.Run(async () =>
                     {
-                        await foreach (MessagePair pair in connection.Subscribe(channel, cancellationToken))
+                        await foreach (MessagePair pair in
+                                       connection.GetChannel(channel)
+                                           .ToAsyncEnumerable()
+                                           .WithCancellation(cancellationToken))
                         {
                             logger.LogInformation("{RawMessage}", pair.RawMessage);
                         }
