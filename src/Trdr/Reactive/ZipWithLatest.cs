@@ -50,7 +50,7 @@ public sealed class ZipWithLatest<T1, T2> : IObservable<(T1, T2)>
 
         void Publish()
         {
-            observer.OnNext((itemHolder1.Item, itemHolder2.Item));
+            observer.OnNext((itemHolder1.Value, itemHolder2.Value));
             itemHolder1.Reset();
             itemHolder2.Reset();
         }
@@ -62,8 +62,8 @@ public sealed class ZipWithLatest<T1, T2> : IObservable<(T1, T2)>
             return observable.Subscribe(
                 item =>
                 {
-                    thisHolder.SetItem(item);
-                    if (otherHolder.TryGetItem(out _))
+                    thisHolder.Value = item;
+                    if (otherHolder.TryGetValue(out _))
                         Publish();
                 },
                 observer.OnError,

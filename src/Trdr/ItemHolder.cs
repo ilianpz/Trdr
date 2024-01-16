@@ -7,38 +7,37 @@
 /// <typeparam name="T"></typeparam>
 public sealed class ItemHolder<T>
 {
-    private T _item = default!;
-    private bool _hasItem;
+    private T _value = default!;
+    private bool _hasValue;
 
-    public T Item
+    public T Value
     {
         get
         {
-            if (!_hasItem) throw new InvalidOperationException("No item.");
-            return _item;
+            if (!_hasValue) throw new InvalidOperationException("No item.");
+            return _value;
+        }
+        set
+        {
+            _value = value;
+            _hasValue = true;
         }
     }
 
-    public void SetItem(T item)
+    public bool TryGetValue(out T value)
     {
-        _item = item;
-        _hasItem = true;
-    }
-
-    public bool TryGetItem(out T item)
-    {
-        if (_hasItem)
+        if (_hasValue)
         {
-            item = _item;
+            value = _value;
             return true;
         }
 
-        item = default!;
+        value = default!;
         return false;
     }
 
     public void Reset()
     {
-        _hasItem = false;
+        _hasValue = false;
     }
 }
