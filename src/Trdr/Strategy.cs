@@ -1,6 +1,6 @@
 ﻿using System.Reactive.Concurrency;
-using System.Reactive.Linq;
 using Nito.AsyncEx;
+using Trdr.Reactive;
 
 namespace Trdr;
 
@@ -9,9 +9,11 @@ namespace Trdr;
 /// </summary>
 public abstract class Strategy
 {
+    private readonly SemaphoreSlim _mutex = new(1);
     private bool _running;
 
-    private TaskScheduler TaskScheduler { get; set; } = null!;
+    private TaskScheduler MainTaskScheduler { get; set; } = null!;
+    private IScheduler MainRxScheduler { get; set; } = null!;
 
     public async Task<Task> Start(CancellationToken cancellationToken = default)
     {
@@ -32,8 +34,9 @@ public abstract class Strategy
                             //
 
                             // Grab the TaskScheduler for this single thread so we can
-                            // schedule Sentinel actions on it.
-                            TaskScheduler = AsyncContext.Current!.Scheduler;
+                            // handlers on it.
+                            MainTaskScheduler = AsyncContext.Current!.Scheduler;
+                            MainRxScheduler = new TaskPoolScheduler(new TaskFactory(MainTaskScheduler));
 
                             var runInternalTask = RunInternal(cancellationToken);
                             startEvent.Set();
@@ -46,21 +49,45 @@ public abstract class Strategy
         return runTask;
     }
 
-    protected Task Subscribe<T>(IObservable<T> stream, Action<T> handleItem, CancellationToken cancellationToken)
+    /// <summary>
+    /// Subscribes to the given <paramref name="stream"/> with a handler for the next update (<paramref name="onNext"/>.
+    /// </summary>
+    /// <param name="stream"></param>
+    /// <param name="onNext"></param>
+    /// <param name="cancellationToken"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    protected Task Subscribe<T>(
+        IObservable<T> stream, Action<T> onNext, CancellationToken cancellationToken)
     {
         if (stream == null) throw new ArgumentNullException(nameof(stream));
-        if (handleItem == null) throw new ArgumentNullException(nameof(handleItem));
+        if (onNext == null) throw new ArgumentNullException(nameof(onNext));
 
-        var tcs = new TaskCompletionSource();
-        stream
-            .ObserveOn(new SynchronizationContextScheduler(SynchronizationContext.Current!))
-            .Subscribe(
-                handleItem,
-                onError: ex => tcs.TrySetException(ex),
-                onCompleted: () => tcs.TrySetResult());
+        var handler = new SubscribeAllHandler(MainRxScheduler);
+        return handler.Subscribe(stream, onNext, cancellationToken);
+    }
 
-        using var cancellation = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
-        return tcs.Task;
+    /// <summary>
+    /// Subscribes to the given <paramref name="stream"/> with a handler for the next update (<paramref name="onNext"/>.
+    /// Note, that <paramref name="onNext"/> will only receive the latest update from the stream.
+    /// That is if <paramref name="onNext"/> does not complete immediately, any intermediate updates that emit during
+    /// this time will be dropped.
+    /// </summary>
+    /// <param name="stream"></param>
+    /// <param name="onNext"></param>
+    /// <param name="cancellationToken"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    /// <exception cref="ArgumentNullException"></exception>
+    protected Task SubscribeLatest<T>(
+        IObservable<T> stream, Func<T, Task> onNext, CancellationToken cancellationToken)
+    {
+        if (stream == null) throw new ArgumentNullException(nameof(stream));
+        if (onNext == null) throw new ArgumentNullException(nameof(onNext));
+
+        var handler = new SubscribeLatestHandler(MainRxScheduler);
+        return handler.Subscribe(stream, onNext, cancellationToken);
     }
 
     private Task RunInternal(CancellationToken cancellationToken)

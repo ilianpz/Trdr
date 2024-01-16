@@ -8,14 +8,14 @@ public sealed class SimpleArbitrageStrategy : Strategy
 {
     private readonly IObservable<TickerPayload> _coinJarTicker;
     private readonly IObservable<Ticker> _binanceTicker;
-    private readonly Action<decimal> _buyAtBinance;
-    private readonly Action<decimal> _sellAtCoinJar;
+    private readonly Func<decimal, Task> _buyAtBinance;
+    private readonly Func<decimal, Task> _sellAtCoinJar;
 
     public SimpleArbitrageStrategy(
         IObservable<TickerPayload> coinJarTicker,
         IObservable<Ticker> binanceTicker,
-        Action<decimal> buyAtBinance,
-        Action<decimal> sellAtCoinJar)
+        Func<decimal, Task> buyAtBinance,
+        Func<decimal, Task> sellAtCoinJar)
     {
         _coinJarTicker = coinJarTicker ?? throw new ArgumentNullException(nameof(coinJarTicker));
         _binanceTicker = binanceTicker ?? throw new ArgumentNullException(nameof(binanceTicker));
@@ -26,18 +26,18 @@ public sealed class SimpleArbitrageStrategy : Strategy
     protected override Task Run(CancellationToken cancellationToken)
     {
         // Subscribe to Binance's and CoinJar's tickers.
-        return Subscribe(
+        return SubscribeLatest(
             _binanceTicker.ZipWithLatest(_coinJarTicker),
             items =>
             {
                 decimal buy = items.Item1.Ask;
                 decimal sell = items.Item2.Bid;
-                HandleUpdate(buy, sell);
+                return HandleUpdate(buy, sell);
             },
             cancellationToken);
     }
 
-    private void HandleUpdate(decimal buy, decimal sell)
+    private async Task HandleUpdate(decimal buy, decimal sell)
     {
         // This simple strategy waits for an arbitrage opportunity by buying low at Binance
         // and selling high at CoinJar.
@@ -48,8 +48,8 @@ public sealed class SimpleArbitrageStrategy : Strategy
         if (sell - buy > 0.002m)
         {
             // Buy at Binance then sell at CoinJar
-            _buyAtBinance(buy);
-            _sellAtCoinJar(sell);
+            await _buyAtBinance(buy);
+            await _sellAtCoinJar(sell);
         }
     }
 }

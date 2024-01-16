@@ -30,11 +30,13 @@ public class SimpleArbitrageStrategyTests
             {
                 ++buyAtBinance;
                 countdown.Signal();
+                return Task.CompletedTask;
             },
             _ =>
             {
                 ++sellAtCoinJar;
                 countdown.Signal();
+                return Task.CompletedTask;
             });
 
         await strategy.Start();
