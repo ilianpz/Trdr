@@ -1,4 +1,5 @@
-﻿using Trdr.Connectivity.Binance;
+﻿using System.Reactive;
+using Trdr.Connectivity.Binance;
 using Trdr.Connectivity.CoinJar.Phoenix;
 using Trdr.Reactive;
 
@@ -6,14 +7,14 @@ namespace Trdr.Samples.SimpleArbitrage;
 
 public sealed class SimpleArbitrageStrategy : Strategy
 {
-    private readonly IObservable<TickerPayload> _coinJarTicker;
-    private readonly IObservable<Ticker> _binanceTicker;
+    private readonly IObservable<Timestamped<TickerPayload>> _coinJarTicker;
+    private readonly IObservable<Timestamped<Ticker>> _binanceTicker;
     private readonly Func<decimal, Task> _buyAtBinance;
     private readonly Func<decimal, Task> _sellAtCoinJar;
 
     public SimpleArbitrageStrategy(
-        IObservable<TickerPayload> coinJarTicker,
-        IObservable<Ticker> binanceTicker,
+        IObservable<Timestamped<TickerPayload>> coinJarTicker,
+        IObservable<Timestamped<Ticker>> binanceTicker,
         Func<decimal, Task> buyAtBinance,
         Func<decimal, Task> sellAtCoinJar)
     {
@@ -30,8 +31,10 @@ public sealed class SimpleArbitrageStrategy : Strategy
             _binanceTicker.ZipWithLatest(_coinJarTicker),
             items =>
             {
-                decimal buy = items.Item1.Ask;
-                decimal sell = items.Item2.Bid;
+                var binanceTicker = items.Item1.Value;
+                var coinJarTicker = items.Item2.Value;
+                decimal buy = binanceTicker.Ask;
+                decimal sell = coinJarTicker.Bid;
                 return HandleUpdate(buy, sell);
             },
             cancellationToken);

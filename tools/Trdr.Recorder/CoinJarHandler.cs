@@ -1,5 +1,6 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Invocation;
+using System.Reactive;
 using Microsoft.Extensions.Logging;
 using Trdr.Connectivity.CoinJar;
 using Trdr.Connectivity.CoinJar.Phoenix;
@@ -47,12 +48,14 @@ internal sealed class CoinJarHandler
                 var tasks = channels.Select(channel =>
                     Task.Run(async () =>
                     {
-                        await foreach (MessagePair pair in
+                        await foreach (Timestamped<MessagePair> timeStamped in
                                        connection.GetChannel(channel)
                                            .ToAsyncEnumerable()
                                            .WithCancellation(cancellationToken))
                         {
-                            logger.LogInformation("{RawMessage}", pair.RawMessage);
+                            logger.LogInformation(
+                                "Timestamp:{Timestamp} Message:{RawMessage}",
+                                timeStamped.Timestamp, timeStamped.Value.RawMessage);
                         }
                     }, cancellationToken));
 

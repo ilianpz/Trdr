@@ -1,7 +1,9 @@
-﻿using System.Reactive.Subjects;
+﻿using System.Reactive;
+using System.Reactive.Subjects;
 using Nito.AsyncEx;
 using Trdr.Connectivity.Binance;
 using Trdr.Connectivity.CoinJar.Phoenix;
+using Trdr.Reactive;
 using Trdr.Samples.SimpleArbitrage;
 
 namespace Trdr.Samples.Tests;
@@ -10,12 +12,12 @@ namespace Trdr.Samples.Tests;
 public class SimpleArbitrageStrategyTests
 {
     [Test]
-    [Repeat(100)]
+    [Repeat(100)] // Try to catch race conditions
     public async Task Can_buy_and_sell()
     {
         // Mock a source of ticker events.
-        var binanceSubject = new Subject<Ticker>();
-        var coinJarSubject = new Subject<TickerPayload>();
+        var binanceSubject = new Subject<Timestamped<Ticker>>();
+        var coinJarSubject = new Subject<Timestamped<TickerPayload>>();
 
         // Count events so we can test the scenario reliably.
         var countdown = new AsyncCountdownEvent(4);
@@ -42,16 +44,16 @@ public class SimpleArbitrageStrategyTests
         await strategy.Start();
 
         // Generate events that will trigger a buy and sell.
-        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
-        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" });
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" }.Timestamp());
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" }.Timestamp());
 
         // Generate events that will NOT trigger a buy and sell.
-        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
-        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.201" });
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" }.Timestamp());
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.201" }.Timestamp());
 
         // Generate events that will trigger a buy and sell.
-        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
-        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" });
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" }.Timestamp());
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" }.Timestamp());
 
         await countdown.WaitAsync();
 

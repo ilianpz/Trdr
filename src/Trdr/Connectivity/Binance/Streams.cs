@@ -1,7 +1,9 @@
 ﻿using System.Globalization;
+using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Text.Json;
+using Trdr.Reactive;
 
 namespace Trdr.Connectivity.Binance;
 
@@ -12,19 +14,22 @@ namespace Trdr.Connectivity.Binance;
 /// </summary>
 public static class Streams
 {
-    public static IObservable<Ticker> GetTicker(string symbol)
+    public static IObservable<Timestamped<Ticker>> GetTicker(string symbol)
     {
         if (symbol == null) throw new ArgumentNullException(nameof(symbol));
 
         return GetStream(GetStreamName(symbol, "bookTicker"))
-            .Select(message => JsonSerializer.Deserialize<Ticker>(message)!);
+            .Select(timeStamped =>
+                Timestamped.Create(
+                    JsonSerializer.Deserialize<Ticker>(timeStamped.Value)!,
+                    timeStamped.Timestamp));
     }
 
-    public static IObservable<string> GetStream(string streamName)
+    public static IObservable<Timestamped<string>> GetStream(string streamName)
     {
         if (streamName == null) throw new ArgumentNullException(nameof(streamName));
 
-        return Observable.Create<string>(
+        return Observable.Create<Timestamped<string>>(
             async observer =>
             {
                 var cts = new CancellationTokenSource();
@@ -38,7 +43,7 @@ public static class Streams
                     while (true)
                     {
                         var message = await connection.GetNextMessage(cts.Token).ConfigureAwait(false);
-                        observer.OnNext(message);
+                        observer.OnNext(message.Timestamp());
                     }
                 }
                 catch (Exception ex)

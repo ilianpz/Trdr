@@ -1,10 +1,12 @@
-﻿using System.Reactive.Disposables;
+﻿using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using Trdr.Async;
 using Trdr.Connectivity.CoinJar.Phoenix;
+using Trdr.Reactive;
 
 namespace Trdr.Connectivity.CoinJar;
 
@@ -42,11 +44,11 @@ public sealed class Connection : WebSocketConnection
         return new Connection("wss://feed.exchange.coinjar-sandbox.com/socket/websocket");
     }
 
-    public IObservable<MessagePair> GetChannel(string channel)
+    public IObservable<Timestamped<MessagePair>> GetChannel(string channel)
     {
         if (channel == null) throw new ArgumentNullException(nameof(channel));
 
-        return Observable.Create<MessagePair>(
+        return Observable.Create<Timestamped<MessagePair>>(
             async observer =>
             {
                 var cts = new CancellationTokenSource();
@@ -72,7 +74,7 @@ public sealed class Connection : WebSocketConnection
                                 throw new InvalidOperationException("Received error response");
                         }
 
-                        observer.OnNext(messagePair);
+                        observer.OnNext(messagePair.Timestamp());
                     }
                 }
                 catch (Exception ex)
@@ -87,13 +89,17 @@ public sealed class Connection : WebSocketConnection
             });
     }
 
-    public IObservable<TickerPayload> SubscribeTicker(string symbol)
+    public IObservable<Timestamped<TickerPayload>> SubscribeTicker(string symbol)
     {
         return SubscribeTickerRaw(symbol)
-            .Select(messagePair => ((MessageWithPayload<TickerPayload>)messagePair.Message).Payload);
+            .Select(
+                messagePair =>
+                    Timestamped.Create(
+                        ((MessageWithPayload<TickerPayload>)messagePair.Value.Message).Payload,
+                        messagePair.Timestamp));
     }
 
-    public IObservable<MessagePair> SubscribeTickerRaw(string pair)
+    public IObservable<Timestamped<MessagePair>> SubscribeTickerRaw(string pair)
     {
         if (pair == null) throw new ArgumentNullException(nameof(pair));
 
@@ -101,7 +107,7 @@ public sealed class Connection : WebSocketConnection
         return GetChannel(topic);
     }
 
-    public IObservable<MessagePair> SubscribeTradesRaw(string pair)
+    public IObservable<Timestamped<MessagePair>> SubscribeTradesRaw(string pair)
     {
         if (pair == null) throw new ArgumentNullException(nameof(pair));
 
