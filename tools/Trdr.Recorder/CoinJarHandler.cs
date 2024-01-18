@@ -21,14 +21,19 @@ internal sealed class CoinJarHandler
     internal Command GetCommand()
     {
         var coinJarCmd = new Command("coinjar");
-        var channelOption = new Option<IEnumerable<string>>("--channel") { AllowMultipleArgumentsPerToken = true };
-        coinJarCmd.AddOption(channelOption);
+        var channelsArgument = new Argument<IEnumerable<string>>
+        {
+            Arity = ArgumentArity.OneOrMore,
+            HelpName = "channels",
+            Description = "The WebSocket channels to subscribe to."
+        };
+        coinJarCmd.AddArgument(channelsArgument);
         coinJarCmd.SetHandler(
             async invocationContext =>
             {
-                var channels = invocationContext.ParseResult.GetValueForOption(channelOption);
+                var channels = invocationContext.ParseResult.GetValueForArgument(channelsArgument);
                 var token = invocationContext.GetCancellationToken();
-                _context.ReturnCode = await ReadChannels(channels!, invocationContext, token);
+                _context.ReturnCode = await ReadChannels(channels, invocationContext, token);
             });
 
         return coinJarCmd;
@@ -38,6 +43,7 @@ internal sealed class CoinJarHandler
         IEnumerable<string> channels, InvocationContext invocationContext, CancellationToken cancellationToken)
     {
         return BaseHandler.Handle(
+            nameof(CoinJarHandler),
             async logger =>
             {
                 logger.LogInformation("Connecting...");
@@ -48,7 +54,7 @@ internal sealed class CoinJarHandler
                 var tasks = channels.Select(channel =>
                     Task.Run(async () =>
                     {
-                        await foreach (Timestamped<MessagePair> timeStamped in
+                        await foreach (var timeStamped in
                                        connection.GetChannel(channel)
                                            .ToAsyncEnumerable()
                                            .WithCancellation(cancellationToken))

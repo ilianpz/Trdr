@@ -8,7 +8,7 @@ namespace Trdr.App
     public static class Application
     {
         private const string ConsoleTemplate = "{Message:lj}{NewLine}{Exception}";
-        private const string FileTemplate = "{Timestamp:HH:mm:ss.ffffff} [{Level:u3}] [{ThreadId}] [{ShortTypeName}] {Message:lj}{NewLine}{Exception}";
+        private const string FileTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss.ffffff} [{Level:u3}] [{ThreadId}] [{ShortTypeName}] {Message:lj}{NewLine}{Exception}";
 
         public static LoggerConfiguration CreateLoggerConfig()
         {
@@ -22,11 +22,11 @@ namespace Trdr.App
             return config.WriteTo.Console(outputTemplate: ConsoleTemplate);
         }
 
-        public static LoggerConfiguration WithFile(this LoggerConfiguration config, string? filePath = null)
+        public static LoggerConfiguration WithFile(this LoggerConfiguration config, string filePath)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             return config.WriteTo.File(
-                filePath ?? "log.txt", outputTemplate: FileTemplate, rollingInterval: RollingInterval.Infinite);
+                filePath, outputTemplate: FileTemplate, rollingInterval: RollingInterval.Day);
         }
 
         public static ILoggerFactory SetupLogger(this LoggerConfiguration config)
@@ -38,11 +38,6 @@ namespace Trdr.App
                 .AddSerilog(dispose: true);
 
             return loggerFactory;
-        }
-
-        public static ILoggerFactory SetupDefaultLogger()
-        {
-            return CreateLoggerConfig().WithFile(null).SetupLogger();
         }
     }
 }

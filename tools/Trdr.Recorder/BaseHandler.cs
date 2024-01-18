@@ -1,6 +1,5 @@
 ﻿using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.CommandLine.Parsing;
 using Microsoft.Extensions.Logging;
 
 namespace Trdr.Recorder;
@@ -8,11 +7,11 @@ namespace Trdr.Recorder;
 internal static class BaseHandler
 {
     public static async Task<int> Handle(
+        string logContext,
         Func<ILogger, Task> handler, InvocationContext invocationContext, Option<string> logOption)
     {
         ILogger logger = ApplicationContext.CreateLogger(
-            nameof(BinanceHandler),
-            invocationContext.ParseResult.HasOption(logOption),
+            logContext,
             invocationContext.ParseResult.GetValueForOption(logOption));
 
         try

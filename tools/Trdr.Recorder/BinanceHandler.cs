@@ -19,15 +19,19 @@ internal sealed class BinanceHandler
     internal Command GetCommand()
     {
         var binanceCmd = new Command("binance");
-
-        var streamsOption = new Option<IEnumerable<string>>("--stream") { AllowMultipleArgumentsPerToken = true };
-        binanceCmd.AddOption(streamsOption);
+        var streamsArgument = new Argument<IEnumerable<string>>
+        {
+            Arity = ArgumentArity.OneOrMore,
+            HelpName = "streams",
+            Description = "The WebSocket streams to subscribe to."
+        };
+        binanceCmd.AddArgument(streamsArgument);
         binanceCmd.SetHandler(
             async invocationContext =>
             {
-                var streams = invocationContext.ParseResult.GetValueForOption(streamsOption);
+                var streams = invocationContext.ParseResult.GetValueForArgument(streamsArgument);
                 var token = invocationContext.GetCancellationToken();
-                _context.ReturnCode = await ReadStreams(streams!, invocationContext, token);
+                _context.ReturnCode = await ReadStreams(streams, invocationContext, token);
             });
 
         return binanceCmd;
@@ -37,6 +41,7 @@ internal sealed class BinanceHandler
         IEnumerable<string> streams, InvocationContext invocationContext, CancellationToken cancellationToken)
     {
         return BaseHandler.Handle(
+            nameof(BinanceHandler),
             async logger =>
             {
                 logger.LogInformation("Connecting...");
@@ -44,11 +49,11 @@ internal sealed class BinanceHandler
                     streams.Select(stream =>
                         Task.Run(async () =>
                             {
-                                await foreach (var message in
+                                await foreach (var timeStamped in
                                                Streams.GetStream(stream).ToAsyncEnumerable()
                                                    .WithCancellation(cancellationToken))
                                 {
-                                    logger.LogInformation("{RawMessage}", message);
+                                    logger.LogInformation("{RawMessage}", timeStamped.Value);
                                 }
                             },
                             cancellationToken));
