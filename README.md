@@ -7,90 +7,81 @@ Trdr aims to:
 
 ## Sentinel
 
-It uses the concept of a `Sentinel` which watches conditions asynchronously. See the following sample code:
-
 ```csharp
-    protected override async Task Run(CancellationToken cancellationToken)
+     protected override Task Run(CancellationToken cancellationToken)
     {
-        decimal buy = 0;
-        decimal sell = 0;
+        // Subscribe to Binance's and CoinJar's tickers.
+        return SubscribeLatest(
+            _binanceTicker.ZipWithLatest(_coinJarTicker),
+            items =>
+            {
+                var binanceTicker = items.Item1.Value;
+                var coinJarTicker = items.Item2.Value;
+                decimal buy = binanceTicker.Ask;
+                decimal sell = coinJarTicker.Bid;
+                return HandleUpdate(buy, sell);
+            },
+            cancellationToken);
+    }
 
-        // Subscribe to Binance's ticker and store its ask everytime it's updated.
-        // Subscribe to CoinJar's ticker and store its bid everytime it's updated.
-        var sentinel =
-            CreateSentinel(_binanceTicker, ticker => buy = ticker.Ask)
-                .Combine(_coinJarTicker, ticker => sell = ticker.Bid);
-
-        sentinel.Start(); // Start the subscriptions
-
+    private async Task HandleUpdate(decimal buy, decimal sell)
+    {
         // This simple strategy waits for an arbitrage opportunity by buying low at Binance
         // and selling high at CoinJar.
         //
         // Note: this is a toy trading strategy that will not work in the real world.
         // It also ignores transaction fees and bid/ask quantities.
         // This only serves to illustrate how the framework is meant to be used.
-
-        do
+        if (sell - buy > 0.002m)
         {
-            await sentinel.Watch(() => sell - buy > 0.002m, cancellationToken);
-
             // Buy at Binance then sell at CoinJar
-            _buyAtBinance(buy);
-            _sellAtCoinJar(sell);
-        } while (true);
-
-        // Exits only when cancellationToken is cancelled.
+            await Task.WhenAll(_buyAtBinance(buy), _sellAtCoinJar(sell));
+        }
     }
 ```
-
 ## Testability
-
-
-
 ```csharp
     public async Task Can_buy_and_sell()
     {
         // Mock a source of ticker events.
-        var binanceSubject = new Subject<Ticker>();
-        var coinJarSubject = new Subject<TickerPayload>();
+        var binanceSubject = new Subject<Timestamped<Ticker>>();
+        var coinJarSubject = new Subject<Timestamped<TickerPayload>>();
 
-        // Synchronize so we can test the scenario reliably.
-        var countdown = new AsyncCountdownEvent(2);
+        // Count events so we can test the scenario reliably.
+        var countdown = new AsyncCountdownEvent(4);
 
         int buyAtBinance = 0;
         int sellAtCoinJar = 0;
 
         var strategy = new SimpleArbitrageStrategy(
-            coinJarSubject.ToAsyncEnumerable(),
-            binanceSubject.ToAsyncEnumerable(),
+            coinJarSubject,
+            binanceSubject,
             _ =>
             {
                 ++buyAtBinance;
                 countdown.Signal();
+                return Task.CompletedTask;
             },
             _ =>
             {
                 ++sellAtCoinJar;
                 countdown.Signal();
+                return Task.CompletedTask;
             });
 
         await strategy.Start();
 
         // Generate events that will trigger a buy and sell.
-        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
-        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" });
-
-        // Wait for the strategy to process the events
-        await countdown.WaitAsync();
-        countdown.AddCount(2);
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" }.Timestamp());
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" }.Timestamp());
 
         // Generate events that will NOT trigger a buy and sell.
-        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
-        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.201" });
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" }.Timestamp());
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.201" }.Timestamp());
 
         // Generate events that will trigger a buy and sell.
-        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" });
-        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" });
+        binanceSubject.OnNext(new Ticker { AskRaw = "9.200", BidRaw = "9.005" }.Timestamp());
+        coinJarSubject.OnNext(new TickerPayload { AskRaw = "9.505", BidRaw = "9.205" }.Timestamp());
 
         await countdown.WaitAsync();
 

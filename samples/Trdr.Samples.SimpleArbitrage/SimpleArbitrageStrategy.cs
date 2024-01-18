@@ -51,8 +51,7 @@ public sealed class SimpleArbitrageStrategy : Strategy
         if (sell - buy > 0.002m)
         {
             // Buy at Binance then sell at CoinJar
-            await _buyAtBinance(buy);
-            await _sellAtCoinJar(sell);
+            await Task.WhenAll(_buyAtBinance(buy), _sellAtCoinJar(sell));
         }
     }
 }
