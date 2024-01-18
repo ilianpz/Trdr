@@ -7,8 +7,10 @@ namespace Trdr.App
 {
     public static class Application
     {
+        public const string TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffffff";
+
         private const string ConsoleTemplate = "{Message:lj}{NewLine}{Exception}";
-        private const string FileTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss.ffffff} [{Level:u3}] [{ThreadId}] [{ShortTypeName}] {Message:lj}{NewLine}{Exception}";
+        private const string FileTemplate = "{Timestamp:" + TimestampFormat + "} [{Level:u3}] [{ThreadId}] [{ShortTypeName}] {Message:lj}{NewLine}{Exception}";
 
         public static LoggerConfiguration CreateLoggerConfig()
         {

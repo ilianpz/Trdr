@@ -17,4 +17,18 @@ public static class SystemExtensions
         var ansTicks = ts.Ticks + Math.Sign(ts.Ticks) * rndTicks / 2;
         return TimeSpan.FromTicks(ansTicks - ansTicks % rndTicks);
     }
+
+    public static int IndexOfNthOccurence(
+        this string source, string match, int occurence,
+        StringComparison stringComparison = StringComparison.CurrentCulture)
+    {
+        if (source == null) throw new ArgumentNullException(nameof(source));
+        if (match == null) throw new ArgumentNullException(nameof(match));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(occurence);
+
+        int idx = source.IndexOf(match, 0, stringComparison);
+        while (idx >= 0 && --occurence > 0)
+            idx = source.IndexOf(match, idx + 1, stringComparison);
+        return idx;
+    }
 }
