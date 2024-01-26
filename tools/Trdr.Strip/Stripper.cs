@@ -19,6 +19,7 @@ internal static class Stripper
     {
         if (stream == null) throw new ArgumentNullException(nameof(stream));
 
+        const string separator = ",";
         var tokenPathsList = tokenPaths?.ToList();
 
         using var reader = new StreamReader(stream);
@@ -30,7 +31,7 @@ internal static class Stripper
             string payload = line.Substring(idx + 1);
 
             var stripped = new StringBuilder();
-            stripped.Append(timeStamp + ", ");
+            stripped.Append(timeStamp + separator);
 
             if (tokenPathsList == null || tokenPathsList.Count == 0)
             {
@@ -44,11 +45,11 @@ internal static class Stripper
                 {
                     var token = (string?)obj.SelectToken(tokenPath);
                     if (token != null)
-                        stripped.Append(token + ", ");
+                        stripped.Append(token + separator);
                 }
 
-                // Remove last ", "
-                stripped.Length -= 2;
+                // Remove last ","
+                stripped.Length -= separator.Length;
             }
 
             Console.WriteLine(stripped.ToString());
