@@ -14,8 +14,18 @@ public static class ByTheClock
 {
     public static TimeSpan GetDelayForInterval(TimeSpan interval, out DateTime targetTime)
     {
-        var now = DateTime.UtcNow;
-        var time = DateTime.UtcNow.TimeOfDay;
+        return GetDelayForInterval(interval, UtcNow, out targetTime);
+
+        DateTime UtcNow()
+        {
+            return DateTime.UtcNow;
+        }
+    }
+
+    internal static TimeSpan GetDelayForInterval(TimeSpan interval, Func<DateTime> getUtcNow, out DateTime targetTime)
+    {
+        var now = getUtcNow();
+        var time = now.TimeOfDay;
         var delay = interval - TimeSpan.FromMilliseconds((time + interval).TotalMilliseconds % interval.TotalMilliseconds);
         targetTime = now.Date + (time + delay).Round(interval);
         return delay;

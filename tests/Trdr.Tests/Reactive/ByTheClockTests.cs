@@ -1,4 +1,5 @@
 ﻿using System.Reactive.Linq;
+using Trdr.Reactive;
 using ObservableExtensions = Trdr.Reactive.ObservableExtensions;
 
 namespace Trdr.Tests.Reactive;
@@ -21,5 +22,19 @@ public sealed class ByTheClockTests
         {
             Assert.That(times[i] - times[i - 1], Is.EqualTo(interval));
         }
+    }
+
+    [Test]
+    public void Can_get_next_interval()
+    {
+        var delay = ByTheClock.GetDelayForInterval(
+            TimeSpan.FromMilliseconds(10),
+            () => new DateTime(2024, 1, 1, 1, 1, 1, 12, DateTimeKind.Utc),
+            out var targetTime);
+
+        Assert.That(delay, Is.EqualTo(TimeSpan.FromMilliseconds(8)));
+        Assert.That(
+            targetTime,
+            Is.EqualTo(new DateTime(2024, 1, 1, 1, 1, 1, 20, DateTimeKind.Utc)));
     }
 }

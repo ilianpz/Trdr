@@ -18,6 +18,18 @@ public static class SystemExtensions
         return TimeSpan.FromTicks(ansTicks - ansTicks % rndTicks);
     }
 
+    /// <summary>
+    /// Rounds up a given <see cref="TimeSpan"/>.
+    /// </summary>
+    /// <param name="ts">The <see cref="TimeSpan"/> to round.</param>
+    /// <param name="rnd">The "digit" to round to.</param>
+    public static TimeSpan RoundUp(this TimeSpan ts, TimeSpan rnd)
+    {
+        var rndTicks = rnd.Ticks;
+        var ansTicks = ts.Ticks - 1 + Math.Sign(ts.Ticks) * rndTicks;
+        return TimeSpan.FromTicks(ansTicks - ansTicks % rndTicks);
+    }
+
     public static int IndexOfNthOccurence(
         this string source, string match, int occurence,
         StringComparison stringComparison = StringComparison.CurrentCulture)
