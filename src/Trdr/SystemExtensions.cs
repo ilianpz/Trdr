@@ -13,9 +13,9 @@ public static class SystemExtensions
         if (rnd == TimeSpan.Zero)
             return ts;
 
-        var rndTicks = rnd.Ticks;
-        var ansTicks = ts.Ticks + Math.Sign(ts.Ticks) * rndTicks / 2;
-        return TimeSpan.FromTicks(ansTicks - ansTicks % rndTicks);
+        var (major, minor, rndTicks) = GetRoundingComponents(ts, rnd);
+        var minorRounded = minor + Math.Sign(ts.Ticks) * rndTicks / 2;
+        return TimeSpan.FromTicks(major + minorRounded - minorRounded % rndTicks);
     }
 
     /// <summary>
@@ -25,9 +25,9 @@ public static class SystemExtensions
     /// <param name="rnd">The "digit" to round to.</param>
     public static TimeSpan RoundUp(this TimeSpan ts, TimeSpan rnd)
     {
-        var rndTicks = rnd.Ticks;
-        var ansTicks = ts.Ticks - 1 + Math.Sign(ts.Ticks) * rndTicks;
-        return TimeSpan.FromTicks(ansTicks - ansTicks % rndTicks);
+        var (major, minor, rndTicks) = GetRoundingComponents(ts, rnd);
+        var minorRounded = minor - 1 + Math.Sign(ts.Ticks) * rndTicks;
+        return TimeSpan.FromTicks(major + minorRounded - minorRounded % rndTicks);
     }
 
     public static int IndexOfNthOccurence(
@@ -42,5 +42,17 @@ public static class SystemExtensions
         while (idx >= 0 && --occurence > 0)
             idx = source.IndexOf(match, idx + 1, stringComparison);
         return idx;
+    }
+
+    private static (long major, long minor, long rndTicks) GetRoundingComponents(TimeSpan ts, TimeSpan rnd)
+    {
+        var rndTicks = rnd.Ticks;
+        var trunc = (long)Math.Pow(10, rndTicks.GetDigits());
+
+        var tsTicks = ts.Ticks;
+        var major = tsTicks / trunc * trunc;
+        var minor = tsTicks - major;
+
+        return (major, minor, rndTicks);
     }
 }

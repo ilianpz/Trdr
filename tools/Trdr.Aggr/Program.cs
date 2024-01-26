@@ -8,15 +8,12 @@ rootCmd.AddArgument(filePathArg);
 string filePath = null!;
 IReadOnlyList<string> columns = null!;
 
-var fileArg = new Argument<string>();
-
-// "0,ts,rnd{00:00:00.01}"
+// "0,ts,rndup{00:00:00.01}"
 // "1,d,mean"
 // "2,d,sum"
 var columnsOption = new Option<IEnumerable<string>>("-c")
 {
-    Arity = ArgumentArity.ExactlyOne,
-    AllowMultipleArgumentsPerToken = true,
+    Arity = ArgumentArity.OneOrMore,
     IsRequired = true,
     Description = "The column index and operation format."
 };
@@ -27,7 +24,7 @@ rootCmd.SetHandler(
         filePath = fp;
         columns = cols.ToList();
     },
-    fileArg, columnsOption);
+    filePathArg, columnsOption);
 
 try
 {

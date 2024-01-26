@@ -24,6 +24,10 @@ internal sealed class SystemExceptionsTests
         new object[] { TimeSpan.Parse("01:01:01.015"), TimeSpan.Parse("00:00:00.01"), TimeSpan.Parse("01:01:01.02") },
         new object[] { TimeSpan.Parse("01:01:01.020"), TimeSpan.Parse("00:00:00.01"), TimeSpan.Parse("01:01:01.02") },
         new object[] { TimeSpan.Parse("01:01:01.020"), TimeSpan.Parse("00:00:00.10"), TimeSpan.Parse("01:01:01.00") },
+        new object[] { TimeSpan.Parse("01:01:01.021"), TimeSpan.Parse("00:00:00.015"), TimeSpan.Parse("01:01:01.015") },
+        new object[] { TimeSpan.Parse("01:01:01.025"), TimeSpan.Parse("00:00:00.015"), TimeSpan.Parse("01:01:01.030") },
+        new object[] { TimeSpan.Parse("01:01:01.0225"), TimeSpan.Parse("00:00:00.015"), TimeSpan.Parse("01:01:01.030") }
+
     ];
 
     public static object[] RoundUpCases =
@@ -33,5 +37,8 @@ internal sealed class SystemExceptionsTests
         new object[] { TimeSpan.Parse("01:01:01.020"), TimeSpan.Parse("00:00:00.01"), TimeSpan.Parse("01:01:01.02") },
         new object[] { TimeSpan.Parse("01:01:01.020"), TimeSpan.Parse("00:00:00.10"), TimeSpan.Parse("01:01:01.10") },
         new object[] { TimeSpan.Parse("01:01:01.020"), TimeSpan.Parse("01:00:00.00"), TimeSpan.Parse("02:00:00.00") },
+        new object[] { TimeSpan.Parse("01:01:01.012"), TimeSpan.Parse("00:00:00.015"), TimeSpan.Parse("01:01:01.015") },
+        new object[] { TimeSpan.FromTicks(0), TimeSpan.FromTicks(15), TimeSpan.FromTicks(0) },
+        new object[] { TimeSpan.FromTicks(1), TimeSpan.FromTicks(15), TimeSpan.FromTicks(15) }
     ];
 }

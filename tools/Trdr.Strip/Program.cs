@@ -8,7 +8,7 @@ rootCmd.AddArgument(filePathArg);
 var tokensOption = new Option<IEnumerable<string>>("--tokens")
 {
     AllowMultipleArgumentsPerToken = true,
-    Description = "The JSON token path as per JNewtonsoft.Json.Linq.Token.SelectToken()"
+    Description = "The JSON token path as per Newtonsoft.Json.Linq.Token.SelectToken()"
 };
 rootCmd.AddOption(tokensOption);
 
