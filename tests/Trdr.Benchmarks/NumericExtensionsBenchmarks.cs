@@ -4,6 +4,16 @@ namespace Trdr.Benchmarks;
 
 public class NumericExtensionsBenchmarks
 {
+    private readonly List<long> _values = new();
+
+    public NumericExtensionsBenchmarks()
+    {
+        for (int i = 0; i < 10_000_000; ++i)
+        {
+            _values.Add(Random.Shared.NextInt64());
+        }
+    }
+
     [Benchmark]
     public void Get_digits()
     {
@@ -18,19 +28,38 @@ public class NumericExtensionsBenchmarks
     }
 
     [Benchmark]
-    public void Control_get_digits()
+    public void Get_digits_from_rnd()
     {
-        Control_GetDigits(10000000L);
-        Control_GetDigits(1000000L);
-        Control_GetDigits(100000L);
-        Control_GetDigits(10000L);
-        Control_GetDigits(1000L);
-        Control_GetDigits(100L);
-        Control_GetDigits(10L);
-        Control_GetDigits(1L);
+        for (int i = 0; i < _values.Count; ++i)
+        {
+            _values[i].GetDigits();
+        }
     }
 
-    private static int Control_GetDigits(long n)
+    [Benchmark]
+    public void Switch_get_digits()
+    {
+        Switch_GetDigits(10000000L);
+        Switch_GetDigits(1000000L);
+        Switch_GetDigits(100000L);
+        Switch_GetDigits(10000L);
+        Switch_GetDigits(1000L);
+        Switch_GetDigits(100L);
+        Switch_GetDigits(10L);
+        Switch_GetDigits(1L);
+    }
+
+    [Benchmark]
+    public void Switch_get_digits_from_rnd()
+    {
+        for (int i = 0; i < _values.Count; ++i)
+        {
+            Switch_GetDigits(_values[i]);
+        }
+    }
+
+    // ReSharper disable once UnusedMethodReturnValue.Local
+    private static int Switch_GetDigits(long n)
     {
         if (n >= 0)
         {
