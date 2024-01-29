@@ -26,7 +26,9 @@ public sealed class SimpleArbitrageStrategy : Strategy
 
     protected override Task Run(CancellationToken cancellationToken)
     {
-        // Subscribe to Binance's and CoinJar's tickers.
+        // Subscribe to Binance's and CoinJar's tickers. For each
+        // latest pair of updates from both exchanges, check if we have
+        // an opportunity to get a profit.
         return SubscribeLatest(
             _binanceTicker.ZipWithLatest(_coinJarTicker),
             items =>
@@ -35,12 +37,12 @@ public sealed class SimpleArbitrageStrategy : Strategy
                 var coinJarTicker = items.Item2.Value;
                 decimal buy = binanceTicker.Ask;
                 decimal sell = coinJarTicker.Bid;
-                return HandleUpdate(buy, sell);
+                return TryBuyAndSell(buy, sell);
             },
             cancellationToken);
     }
 
-    private async Task HandleUpdate(decimal buy, decimal sell)
+    private async Task TryBuyAndSell(decimal buy, decimal sell)
     {
         // This simple strategy waits for an arbitrage opportunity by buying low at Binance
         // and selling high at CoinJar.

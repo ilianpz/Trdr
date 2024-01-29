@@ -22,21 +22,21 @@ public class SimpleArbitrageStrategyTests
         // Count events so we can test the scenario reliably.
         var countdown = new AsyncCountdownEvent(4);
 
-        int buyAtBinance = 0;
-        int sellAtCoinJar = 0;
+        var buys = new List<decimal>();
+        var sells = new List<decimal>();
 
         var strategy = new SimpleArbitrageStrategy(
             coinJarSubject,
             binanceSubject,
-            _ =>
+            buyAtBinance =>
             {
-                ++buyAtBinance;
+                buys.Add(buyAtBinance);
                 countdown.Signal();
                 return Task.CompletedTask;
             },
-            _ =>
+            sellAtCoinJar =>
             {
-                ++sellAtCoinJar;
+                sells.Add(sellAtCoinJar);
                 countdown.Signal();
                 return Task.CompletedTask;
             });
@@ -58,7 +58,11 @@ public class SimpleArbitrageStrategyTests
         await countdown.WaitAsync();
 
         // Strategy should have bought and sold twice.
-        Assert.That(buyAtBinance, Is.EqualTo(2));
-        Assert.That(sellAtCoinJar, Is.EqualTo(2));
+        Assert.That(buys, Has.Count.EqualTo(2));
+        Assert.That(buys[0], Is.EqualTo(9.2m));
+        Assert.That(buys[1], Is.EqualTo(9.2m));
+        Assert.That(sells, Has.Count.EqualTo(2));
+        Assert.That(sells[0], Is.EqualTo(9.205m));
+        Assert.That(sells[1], Is.EqualTo(9.205m));
     }
 }
